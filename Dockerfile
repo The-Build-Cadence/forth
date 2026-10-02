@@ -19,9 +19,9 @@ RUN apt-get update \
         tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 
-COPY Pipfile ./
+COPY Pipfile Pipfile.lock ./
 RUN pip install --no-cache-dir pipenv \
-    && pipenv install --system --skip-lock
+    && pipenv sync --system
 
 COPY backend ./backend
 COPY --from=frontend-build /app/frontend/dist/forth-web/browser /app/backend/staticfiles
