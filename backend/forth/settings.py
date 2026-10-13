@@ -116,6 +116,14 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True
 
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': REDIS_URL,
+        'KEY_PREFIX': 'forth-cache',
+    },
+}
+BRAVE_SEARCH_API_KEY = os.environ.get('BRAVE_SEARCH_API_KEY', '')
 CELERY_BROKER_URL = REDIS_URL
 CELERY_RESULT_BACKEND = REDIS_URL
 CELERY_TASK_TIME_LIMIT = int(os.environ.get('CELERY_TASK_TIME_LIMIT_SECONDS', '900'))
@@ -123,7 +131,7 @@ CELERY_TASK_SOFT_TIME_LIMIT = int(os.environ.get('CELERY_TASK_SOFT_TIME_LIMIT_SE
 CELERY_BEAT_SCHEDULE = {
     'refresh-enabled-job-sources': {
         'task': 'core.tasks.refresh_enabled_sources_task',
-        'schedule': float(os.environ.get('SOURCE_REFRESH_INTERVAL_SECONDS', '21600')),
+        'schedule': float(os.environ.get('SOURCE_REFRESH_INTERVAL_SECONDS', '900')),
     },
 }
 

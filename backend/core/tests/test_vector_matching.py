@@ -89,8 +89,10 @@ class VectorMatchingTests(TestCase):
 
         semantic = match.signals.get(kind='semantic')
         self.assertGreater(semantic.score, 0)
-        self.assertEqual(semantic.weight, 25)
-        self.assertEqual(match.explanation_json['score_version'], '2026-10-v4-capability-aware')
+        self.assertEqual(semantic.weight, 35)
+        self.assertEqual(match.explanation_json['score_version'], '2026-10-v6-grounded-inference')
+        self.assertIn('top_evidence_similarity', match.explanation_json)
+        self.assertIn('blended_semantic_similarity', match.explanation_json)
         self.assertEqual(match.explanation_json['embedding_provider'], 'local_fallback')
         self.assertIn(self.fact.id, [item['fact_id'] for item in match.supporting_facts])
 
@@ -133,6 +135,33 @@ class VectorMatchingTests(TestCase):
         self.assertNotIn('react', match.missing_requirements)
         self.assertIn('react', match.explanation_json['preferred_gaps'])
 
+    def test_django_evidence_partially_covers_python_without_claiming_api_experience(self):
+        self.fact.statement = 'Led delivery of reliable Django web applications.'
+        self.fact.save(update_fields=['statement', 'updated_at'])
+        JobRequirement.objects.all().delete()
+        for name in ('Python', 'API'):
+            JobRequirement.objects.create(
+                owner=self.user,
+                job=self.job,
+                kind='required',
+                category='skill',
+                text=name,
+                normalized_value=name.lower(),
+                is_hard=True,
+            )
+
+        match = recompute_match(self.job)
+
+        self.assertIn('python', match.explanation_json['covered_skills'])
+        self.assertIn('api', match.missing_requirements)
+        self.assertEqual(match.explanation_json['inferred_capabilities'], [{
+            'capability': 'python',
+            'basis': 'Django/DRF/Flask/FastAPI/Celery experience is Python-framework evidence.',
+            'credit': 'partial',
+        }])
+        supporting = next(item for item in match.supporting_facts if item['fact_id'] == self.fact.id)
+        self.assertEqual(supporting['inferred_skills'], ['python'])
+
     def test_candidate_source_of_truth_overrides_older_imported_facts(self):
         ProfileFact.objects.create(
             owner=self.user,
@@ -147,6 +176,25 @@ class VectorMatchingTests(TestCase):
         facts = list(authoritative_facts(self.user))
 
         self.assertEqual([fact.title for fact in facts], ['Current LinkedIn skill'])
+
+    def test_verified_resume_skill_still_counts_when_linkedin_is_source_of_truth(self):
+        self.fact.statement = 'Led reliable Django platform delivery.'
+        self.fact.metadata = {'source_of_truth': True, 'source': 'linkedin'}
+        self.fact.save(update_fields=['statement', 'metadata', 'updated_at'])
+        ProfileFact.objects.create(
+            owner=self.user,
+            fact_type='skill',
+            title='Python and Django application development',
+            statement='Python and Django application development, testing, and upgrades.',
+            verified_by_user=True,
+            lifecycle='verified',
+            metadata={'source': 'resume'},
+        )
+
+        match = recompute_match(self.job)
+
+        self.assertIn('python', match.explanation_json['covered_skills'])
+        self.assertNotIn('python', match.missing_requirements)
 
     @patch('core.ai._openai_available', return_value=True)
     @patch('core.ai.openai_client')

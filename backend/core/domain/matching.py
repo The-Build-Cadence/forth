@@ -13,15 +13,15 @@ from core.domain.embeddings import (
     refresh_profile_embedding,
     vector_similarity,
 )
-from core.domain.profiles import authoritative_facts, profile_context
+from core.domain.profiles import matching_facts, profile_context
 from core.models import JobMatch, JobPosting, MatchSignal, ProfileFact
 from core.domain.scoring import normalize_match_score
 
 
 WEIGHTS = {
-    'skills': 25,
+    'skills': 15,
     'evidence': 20,
-    'semantic': 25,
+    'semantic': 35,
     'direction': 15,
     'domain': 5,
     'logistics': 10,
@@ -51,6 +51,14 @@ CAPABILITY_EVIDENCE = {
     'software architecture': ('software architecture', 'system architecture', 'application architecture', 'system design', 'architecture'),
     'ai platform development': ('ai platform', 'ai-native', 'applied ai'),
     'llm evaluation': ('llm evaluation', 'llm eval', 'evals pipeline', 'test harness'),
+}
+
+# These are narrow, technically inherent relationships rather than fuzzy
+# keyword associations.  They help a profile that says “Django” receive
+# appropriate partial credit for Python, while still preserving the distinction
+# between what was written and what the matcher can safely infer.
+IMPLICIT_CAPABILITY_EVIDENCE = {
+    'python': ('django', 'django rest framework', 'drf', 'flask', 'fastapi', 'celery'),
 }
 
 MANAGEMENT_TITLE_TOKENS = {'manager', 'management', 'lead', 'leader', 'head', 'director', 'principal'}
@@ -103,6 +111,21 @@ def _normalized_requirements(job: JobPosting) -> list[dict[str, Any]]:
 def _requirement_supported(blob: str, name: str) -> bool:
     aliases = CAPABILITY_EVIDENCE.get(name)
     return _contains_any(blob, aliases) if aliases else _contains(blob, name)
+
+
+def _requirement_support_kind(blob: str, name: str) -> str | None:
+    """Return whether verified evidence states or safely implies a capability."""
+    if _requirement_supported(blob, name):
+        return 'direct'
+    if _contains_any(blob, IMPLICIT_CAPABILITY_EVIDENCE.get(name, ())):
+        return 'inferred'
+    return None
+
+
+def _inference_explanation(name: str) -> str:
+    if name == 'python':
+        return 'Django/DRF/Flask/FastAPI/Celery experience is Python-framework evidence.'
+    return 'Supported by a narrowly defined technical implication in verified evidence.'
 
 
 def _role_direction_score(title: str, targets: list[str]) -> int:
@@ -167,7 +190,7 @@ def recompute_match(job: JobPosting) -> JobMatch:
     context = profile_context(job.owner)
     profile = refresh_profile_embedding(job.owner)
     job = refresh_job_embedding(job)
-    facts = list(authoritative_facts(job.owner).order_by('-verified_by_user', 'fact_type', 'title')[:250])
+    facts = list(matching_facts(job.owner).order_by('-verified_by_user', 'fact_type', 'title')[:250])
     fact_text = '\n'.join(f'{fact.title}: {fact.statement}' for fact in facts)
     # Direct capability coverage must be grounded in confirmed evidence.  We
     # still use all facts for semantic retrieval, allowing the UI to show
@@ -185,9 +208,11 @@ def recompute_match(job: JobPosting) -> JobMatch:
         ]
     required_requirements = [item for item in requirements if item['required']]
     preferred_requirements = [item for item in requirements if not item['required']]
-    covered_requirements = [
-        item for item in requirements if _requirement_supported(verified_profile_blob, item['name'])
-    ]
+    support_kinds = {
+        item['name']: _requirement_support_kind(verified_profile_blob, item['name'])
+        for item in requirements
+    }
+    covered_requirements = [item for item in requirements if support_kinds[item['name']]]
     covered = [item['name'] for item in covered_requirements]
     # Only unmet required capabilities are visible gaps. Preferred capabilities
     # are recorded separately, so candidates are not penalized as though a nice
@@ -200,24 +225,33 @@ def recompute_match(job: JobPosting) -> JobMatch:
         item['name'] for item in preferred_requirements
         if item['name'] not in covered
     ]
-    required_score = 100 * sum(item['name'] in covered for item in required_requirements) / max(1, len(required_requirements))
-    preferred_score = 100 * sum(item['name'] in covered for item in preferred_requirements) / max(1, len(preferred_requirements)) if preferred_requirements else 100
+    def coverage_score(items: list[dict[str, Any]]) -> float:
+        # Inferred framework knowledge is useful signal, but direct evidence
+        # remains the stronger and more transparent match.
+        points = sum(1 if support_kinds[item['name']] == 'direct' else .75 if support_kinds[item['name']] == 'inferred' else 0 for item in items)
+        return 100 * points / max(1, len(items))
+
+    required_score = coverage_score(required_requirements)
+    preferred_score = coverage_score(preferred_requirements) if preferred_requirements else 100
     skill_score = round(required_score * 0.85 + preferred_score * 0.15)
 
     supporting_by_id: dict[int, dict[str, Any]] = {}
     for fact in facts:
-        overlap = [
-            skill for skill in covered
-            if _requirement_supported(f'{fact.title} {fact.statement}', skill)
-        ]
+        fact_blob = f'{fact.title} {fact.statement} {fact.evidence_quote}'
+        overlap = [skill for skill in covered if _requirement_support_kind(fact_blob, skill)]
         if overlap:
+            inferred_skills = [
+                skill for skill in overlap
+                if _requirement_support_kind(fact_blob, skill) == 'inferred'
+            ]
             supporting_by_id[fact.id] = {
                 'fact_id': fact.id,
                 'title': fact.title,
                 'statement': fact.statement,
                 'skills': overlap,
                 'verified': fact.verified_by_user or fact.lifecycle == 'verified',
-                'match_basis': 'skill evidence',
+                'inferred_skills': inferred_skills,
+                'match_basis': 'framework-inferred capability evidence' if inferred_skills else 'skill evidence',
             }
     for fact in nearest_profile_facts(job.owner, job.semantic_embedding, limit=12):
         similarity = vector_similarity(fact.semantic_embedding, job.semantic_embedding)
@@ -263,7 +297,24 @@ def recompute_match(job: JobPosting) -> JobMatch:
     logistics_score = 100 if hard_status == 'pass' else 60 if hard_status == 'uncertain' else 0
 
     semantic_similarity = profile_job_similarity(profile, job)
-    semantic_score = round(max(0.0, semantic_similarity) * 100)
+    verified_fact_similarities = [
+        vector_similarity(fact.semantic_embedding, job.semantic_embedding)
+        for fact in facts
+        if (fact.verified_by_user or fact.lifecycle == 'verified') and fact.semantic_embedding is not None
+    ]
+    verified_fact_similarities.sort(reverse=True)
+    top_fact_similarity = (
+        sum(verified_fact_similarities[:5]) / len(verified_fact_similarities[:5])
+        if verified_fact_similarities else 0.0
+    )
+    # Overall direction and the strongest verified evidence both contribute to
+    # semantic fit. Literal capability coverage remains a smaller cross-check.
+    blended_semantic_similarity = semantic_similarity * 0.6 + top_fact_similarity * 0.4
+    # Embedding cosine values occupy a narrower range than percentages. Treat
+    # 0.15 as effectively unrelated and 0.65 as a very strong semantic match,
+    # while retaining the raw values in explanation_json for auditability.
+    calibrated_semantic_similarity = max(0.0, min(1.0, (blended_semantic_similarity - 0.15) / 0.5))
+    semantic_score = round(calibrated_semantic_similarity * 100)
 
     signals = [
         _signal(
@@ -279,7 +330,7 @@ def recompute_match(job: JobPosting) -> JobMatch:
             'semantic',
             'Whole-profile semantic fit',
             semantic_score,
-            'Cosine similarity between the complete candidate profile and normalized job profile.',
+            'Cosine similarity blending the complete profile and the strongest verified evidence against the normalized job profile.',
             [{
                 'candidate_embedding_model': profile.embedding_model,
                 'job_embedding_model': job.embedding_model,
@@ -311,13 +362,25 @@ def recompute_match(job: JobPosting) -> JobMatch:
         'required_capabilities': [item['name'] for item in required_requirements],
         'preferred_capabilities': [item['name'] for item in preferred_requirements],
         'preferred_gaps': preferred_gaps,
+        'inferred_capabilities': [
+            {
+                'capability': item['name'],
+                'basis': _inference_explanation(item['name']),
+                'credit': 'partial',
+            }
+            for item in covered_requirements
+            if support_kinds[item['name']] == 'inferred'
+        ],
         'eligibility_failures': failures,
         'eligibility_uncertainties': uncertainties,
         'semantic_similarity': round(semantic_similarity, 4),
+        'top_evidence_similarity': round(top_fact_similarity, 4),
+        'blended_semantic_similarity': round(blended_semantic_similarity, 4),
+        'calibrated_semantic_similarity': round(calibrated_semantic_similarity, 4),
         'embedding_model': job.embedding_model,
         'embedding_provider': job.embedding_provider,
         'signals': signals,
-        'score_version': '2026-10-v4-capability-aware',
+        'score_version': '2026-10-v6-grounded-inference',
     }
     # Keep the raw score as the source of truth. The calibrated score makes the
     # profile's chosen ready-to-apply threshold visually consistent at 80.

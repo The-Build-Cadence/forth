@@ -176,6 +176,10 @@ export class AppComponent implements OnInit, OnDestroy {
       match_recompute_started: { key: `match:${data.job_id}`, label: 'Recomputing job fit…' },
       match_recomputed: { key: `match:${data.job_id}`, done: true },
       match_recompute_failed: { key: `match:${data.job_id}`, done: true },
+      materials_regeneration_queued: { key: `materials:${data.job_id}`, label: 'Queueing fresh application materials…' },
+      materials_regeneration_started: { key: `materials:${data.job_id}`, label: 'Regenerating resume and cover letter…' },
+      materials_regenerated: { key: `materials:${data.job_id}`, done: true },
+      materials_regeneration_failed: { key: `materials:${data.job_id}`, done: true },
       agent_run_queued: { key: `agent:${data.run_id}`, label: 'A specialist is queued…' },
       agent_run_started: { key: `agent:${data.run_id}`, label: 'A specialist is working…' },
     };

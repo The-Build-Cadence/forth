@@ -12,7 +12,10 @@ x-backend-env: &backend_env
   OPENAI_MAX_RETRIES: ${OPENAI_MAX_RETRIES:-0}
   GOTENBERG_URL: http://gotenberg:3000
   SOURCE_HTTP_TIMEOUT_SECONDS: ${SOURCE_HTTP_TIMEOUT_SECONDS:-20}
-  SOURCE_REFRESH_INTERVAL_SECONDS: ${SOURCE_REFRESH_INTERVAL_SECONDS:-21600}
+  # Beat checks due sources every 15 minutes; each source's own schedule_minutes
+  # controls whether it is actually queued.
+  SOURCE_REFRESH_INTERVAL_SECONDS: ${SOURCE_REFRESH_INTERVAL_SECONDS:-900}
+  BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
 
 services:
   db:

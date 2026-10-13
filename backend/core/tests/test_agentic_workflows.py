@@ -14,6 +14,7 @@ from core.models import (
     Artifact,
     CandidateProfile,
     ConversationMessage,
+    CoverLetter,
     JobPosting,
     JobRequirement,
     JobSource,
@@ -22,6 +23,7 @@ from core.models import (
     Resume,
     SourceRun,
 )
+from core.tasks import regenerate_application_materials_task
 
 
 class AgenticWorkflowTests(TestCase):
@@ -77,7 +79,7 @@ class AgenticWorkflowTests(TestCase):
         self.assertTrue(match.supporting_facts)
         self.assertIn('score_version', match.explanation_json)
         self.assertTrue(match.signals.filter(kind='semantic').exists())
-        self.assertEqual(match.explanation_json['score_version'], '2026-10-v4-capability-aware')
+        self.assertEqual(match.explanation_json['score_version'], '2026-10-v5-semantic-evidence')
 
     def test_document_workflow_waits_for_approval_then_prepares_materials(self):
         run = create_concierge_run(self.user, message='Prepare my strongest opportunity')
@@ -94,6 +96,20 @@ class AgenticWorkflowTests(TestCase):
         self.assertTrue(self.job.cover_letters.exists())
         run.refresh_from_db()
         self.assertEqual(run.status, 'succeeded')
+
+    def test_material_regeneration_creates_fresh_versions_and_updates_application(self):
+        first = regenerate_application_materials_task(self.job.id)
+        first_resume_id = first['resume_id']
+
+        second = regenerate_application_materials_task(self.job.id)
+
+        application = Application.objects.get(owner=self.user, job=self.job)
+        self.assertNotEqual(second['resume_id'], first_resume_id)
+        self.assertEqual(application.resume_id, second['resume_id'])
+        self.assertEqual(application.status, 'materials_ready')
+        self.assertEqual(second['cover_letter_version'], 2)
+        self.assertEqual(CoverLetter.objects.filter(owner=self.user, target_job=self.job).count(), 2)
+        self.assertEqual(application.events.filter(event_type='materials_regenerated').count(), 2)
 
     def test_chat_understands_top_role_follow_up_and_keeps_job_context(self):
         recompute_match(self.job)
@@ -314,8 +330,8 @@ class AgenticApiOwnershipTests(APITestCase):
         self.assertTrue(Resume.objects.filter(owner=self.owner, kind='canonical').exists())
 
     @override_settings(CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
-    def test_manual_source_run_reaches_a_terminal_success_state(self):
-        source = JobSource.objects.create(owner=self.owner, name='Manual QA', kind='manual', config={})
+    def test_brave_source_run_reaches_a_terminal_success_state(self):
+        source = JobSource.objects.create(owner=self.owner, name='Brave QA', kind='brave', config={'demo': True})
 
         response = self.client.post(f'/api/sources/{source.id}/run/', {}, format='json')
 

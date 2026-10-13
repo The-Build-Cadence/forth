@@ -40,6 +40,7 @@ from .models import (
     Resume,
 )
 from .domain.profiles import authoritative_facts
+from .domain.resume_contacts import apply_resume_contacts, without_resume_contacts
 
 
 class _ReadableHTMLParser(HTMLParser):
@@ -360,17 +361,20 @@ def create_tailored_resume(owner, *, job: JobPosting, canonical: Resume | None =
         )
     facts = list(authoritative_facts(owner).order_by('-verified_by_user', 'fact_type', 'title')[:120])
     profile = getattr(owner, 'candidate_profile', None)
+    contact = getattr(profile, 'resume_contact', {}) or {}
+    candidate_name = owner.get_full_name() or owner.get_username().replace('.', ' ').replace('_', ' ').title()
+    source_markdown = without_resume_contacts(canonical.content_markdown) if contact else canonical.content_markdown
     result = tailor_resume(
-        canonical_markdown=canonical.content_markdown,
+        canonical_markdown=source_markdown,
         job_title=job.title,
         job_text=job.description_text,
         facts=[{
             'id': fact.id,
-            'title': fact.title,
-            'statement': fact.statement,
+            'title': without_resume_contacts(fact.title) if contact else fact.title,
+            'statement': without_resume_contacts(fact.statement) if contact else fact.statement,
             'verified_by_user': fact.verified_by_user,
         } for fact in facts],
-        candidate_name=owner.get_full_name() or owner.get_username().replace('.', ' ').replace('_', ' ').title(),
+        candidate_name=candidate_name,
         candidate_headline=getattr(profile, 'headline', ''),
         candidate_location=getattr(profile, 'location', ''),
     )
@@ -387,9 +391,15 @@ def create_tailored_resume(owner, *, job: JobPosting, canonical: Resume | None =
         owner=owner,
         kind='tailored',
         title=clean_text(result.data.get('title'))[:220] or f'{job.title} Tailored Resume',
-        content_markdown=result.data.get('content_markdown', canonical.content_markdown),
+        content_markdown=apply_resume_contacts(
+            result.data.get('content_markdown', source_markdown), contact, candidate_name=candidate_name,
+        ),
         content_json={
             'target_job_id': job.id,
+            'resume_contact': {
+                field: contact.get(field, '') if contact.get(toggle) else ''
+                for field, toggle in [('phone', 'include_phone'), ('email', 'include_email'), ('linkedin_url', 'include_linkedin')]
+            } if contact else {},
             'design': result.data.get('design') or {
                 'template': 'modern', 'density': 'balanced', 'accent': '#177d69',
                 'page_size': 'Letter', 'rationale': 'A clean, ATS-safe presentation selected for this application.',

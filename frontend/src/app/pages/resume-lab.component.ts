@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, ViewEncapsulation } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ApiService, CoverLetter, JobPosting, Resume } from '../services/api.service';
+import { ApiService, CoverLetter, JobPosting, Resume, ResumeContact } from '../services/api.service';
 
 interface ResumeDesign {
   template: 'modern' | 'classic' | 'minimal';
@@ -31,8 +31,32 @@ interface ResumeDesign {
         <button type="button" role="tab" [class.active]="activeTab === 'library'" [attr.aria-selected]="activeTab === 'library'" (click)="activeTab = 'library'">Generated resumes <span>{{ resumes.length }}</span></button>
         <button type="button" role="tab" [class.active]="activeTab === 'tailor'" [attr.aria-selected]="activeTab === 'tailor'" (click)="activeTab = 'tailor'">Generate with AI</button>
         <button type="button" role="tab" [class.active]="activeTab === 'create'" [attr.aria-selected]="activeTab === 'create'" (click)="activeTab = 'create'">Source resume</button>
+        <button type="button" role="tab" [class.active]="activeTab === 'contact'" [attr.aria-selected]="activeTab === 'contact'" (click)="activeTab = 'contact'">Contact details</button>
       </div>
       <p class="feedback-banner" role="status" *ngIf="message">{{ message }}</p>
+
+      <section class="panel resume-contact-panel" *ngIf="activeTab === 'contact'">
+        <div class="panel-head"><div><h2>Contact details on your resumes</h2><p>Choose how employers can reach you. Saved settings replace phone, email, and LinkedIn details from your source when generating a new resume, including application bundles. Regenerate an existing version to apply changes.</p></div></div>
+        <p *ngIf="!contactLoaded && !contactLoadFailed" role="status">Loading contact settings…</p>
+        <p *ngIf="contactLoadFailed" role="alert">Contact settings could not be loaded. <button class="btn-secondary" type="button" (click)="loadContact()">Retry</button></p>
+        <form #contactForm="ngForm" (ngSubmit)="saveContact()" *ngIf="contactLoaded">
+          <div class="resume-contact-field">
+            <label>Phone number<input type="tel" autocomplete="tel" name="contactPhone" [(ngModel)]="contact.phone" maxlength="60" placeholder="+1 416 555 0123"></label>
+            <label class="resume-contact-toggle"><input type="checkbox" name="includePhone" [(ngModel)]="contact.include_phone">Include phone on new resumes</label>
+          </div>
+          <div class="resume-contact-field">
+            <label>Email address<input type="email" email autocomplete="email" name="contactEmail" [(ngModel)]="contact.email" maxlength="254" placeholder="you@example.com"></label>
+            <label class="resume-contact-toggle"><input type="checkbox" name="includeEmail" [(ngModel)]="contact.include_email">Include email on new resumes</label>
+          </div>
+          <div class="resume-contact-field">
+            <label>LinkedIn profile URL<input type="url" name="contactLinkedin" [(ngModel)]="contact.linkedin_url" maxlength="500" placeholder="https://www.linkedin.com/in/your-name/"></label>
+            <label class="resume-contact-toggle"><input type="checkbox" name="includeLinkedin" [(ngModel)]="contact.include_linkedin">Include LinkedIn on new resumes</label>
+          </div>
+          <p class="field-hint">Empty fields are omitted. Unchecked details remain saved here but are left out of new resumes. Until you save settings, contacts from your source resume are preserved.</p>
+          <p *ngIf="contactError" role="alert">{{ contactError }}</p>
+          <div class="action-row form-actions"><button class="btn-primary" type="submit" [disabled]="savingContact || contactForm.invalid">{{ savingContact ? 'Saving…' : 'Save contact settings' }}</button></div>
+        </form>
+      </section>
 
       <section class="panel generation-workflow" *ngIf="activeTab === 'tailor'">
         <div class="generation-hero">
@@ -45,6 +69,7 @@ interface ResumeDesign {
           <div><span>3</span><strong>Write and design</strong><small>Hierarchy, bullets, typography, spacing, and density</small></div>
         </div>
         <label class="opportunity-picker">Target opportunity<select [(ngModel)]="targetJobId" name="targetJobId"><option [ngValue]="null">Choose a job from your matches</option><option *ngFor="let job of jobs" [ngValue]="job.id">{{ job.title }} · {{ job.company }}</option></select></label>
+        <p>New resumes use your saved <button class="btn-secondary" type="button" (click)="activeTab = 'contact'">Contact details</button>.</p>
         <div class="ai-safety-note"><span>✓</span><div><strong>Evidence stays in control</strong><p>Forth can reframe and prioritize your experience, but it cannot invent facts, dates, employers, metrics, or credentials.</p></div></div>
         <div class="action-row form-actions">
           <button class="btn-primary" type="button" (click)="tailor()" [disabled]="!targetJobId || generating"><span class="spinner" *ngIf="generating" aria-hidden="true"></span>{{ generating ? 'Writing and designing…' : '✦ Generate complete resume' }}</button>
@@ -146,11 +171,42 @@ export class ResumeLabComponent implements OnInit {
   approvingLetterId: number | null = null;
   acceptResumeRisk = false;
   acceptLetterRisk = false;
-  activeTab: 'library' | 'create' | 'tailor' = 'library';
+  activeTab: 'library' | 'create' | 'tailor' | 'contact' = 'library';
+  contact: ResumeContact = { phone: '', email: '', linkedin_url: '', include_phone: true, include_email: true, include_linkedin: true };
+  contactLoaded = false;
+  contactLoadFailed = false;
+  savingContact = false;
+  contactError = '';
 
   constructor(private api: ApiService) {}
 
-  ngOnInit(): void { this.load(); }
+  ngOnInit(): void { this.load(); this.loadContact(); }
+
+  loadContact(): void {
+    this.contactLoadFailed = false;
+    this.api.candidateProfile().subscribe({
+      next: (profile) => { this.contact = { ...this.contact, ...profile.resume_contact }; this.contactLoaded = true; },
+      error: () => { this.contactLoadFailed = true; },
+    });
+  }
+
+  saveContact(): void {
+    if (!this.contactLoaded || this.savingContact) return;
+    this.savingContact = true;
+    this.contactError = '';
+    this.api.updateCandidateProfile({ resume_contact: { ...this.contact } }).subscribe({
+      next: (profile) => {
+        this.contact = { ...this.contact, ...profile.resume_contact };
+        this.savingContact = false;
+        this.message = 'Contact settings saved. Generate or regenerate a resume to use them.';
+      },
+      error: (error) => {
+        this.savingContact = false;
+        const fields = error?.error?.resume_contact;
+        this.contactError = fields ? Object.values(fields).flat().join(' ') : 'Could not save contact settings. Please try again.';
+      },
+    });
+  }
 
   load(): void {
     this.api.resumes().subscribe((page) => {
@@ -233,8 +289,12 @@ export class ResumeLabComponent implements OnInit {
   }
 
   renderMarkdown(markdown: string): string {
-    const escape = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
-    const inline = (value: string) => escape(value).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|\W)\*(.+?)\*(?=\W|$)/g, '$1<em>$2</em>');
+    const escape = (value: string) => value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;');
+    const format = (value: string) => escape(value).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/(^|\W)\*(.+?)\*(?=\W|$)/g, '$1<em>$2</em>');
+    const inline = (value: string) => value.split(/(\[[^\]\n]+\]\((?:https?:\/\/|mailto:)(?:[^\s<>()]|\([^()\s<>]*\))+\))/g).map((part) => {
+      const link = part.match(/^\[([^\]\n]+)\]\(((?:https?:\/\/|mailto:)(?:[^\s<>()]|\([^()\s<>]*\))+)\)$/);
+      return link ? `<a href="${escape(link[2])}">${format(link[1])}</a>` : format(part);
+    }).join('');
     const html: string[] = [];
     let listOpen = false;
     for (const raw of (markdown || '').split('\n')) {

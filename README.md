@@ -176,6 +176,48 @@ The standalone, responsive guide is available in the running app at
 
 ## Quality Checks
 
+### Application document readability
+
+Material preparation asks for evidence-backed qualifications summaries, standard section
+names, and explicit employer, date, location, and contact labels wherever those details
+are supplied. Missing facts are not filled in. The offline fallback preserves the
+source resume and adds supported summary points and skills; it does not reconstruct
+employment history.
+
+PDF exports use selectable text in a single-column reading order, semantic headings
+and lists, document language, clickable links, accessibility tags, and a heading
+outline. These use Gotenberg's [tagged PDF and outline options](https://gotenberg.dev/docs/convert-with-chromium/convert-html-to-pdf).
+The same semantic content is retained in the HTML fallback when the renderer is
+unavailable. No hidden hiring-agent instructions are added. Tags improve navigation
+and extraction but are not a certification of PDF/UA compliance or a guarantee of any
+particular hiring system's parsing behavior.
+
+Re-prepare drafts to use the new content guidance; re-export existing drafts to use
+the new PDF structure. Existing saved artifacts are not rewritten.
+
+In **Resume Studio → Contact details**, save a phone number, email address, and
+HTTPS LinkedIn profile URL. Each has an independent inclusion checkbox; empty
+or unchecked fields are omitted from newly generated resumes. Configured contacts
+replace conventional source contact details and are inserted directly below the
+candidate name, so both AI and offline drafts use the same values. The generated
+Markdown, preview, PDF, and application bundle share that saved version. Changes
+apply on generation, not retroactively to reviewed or approved resumes. Until
+settings are first saved, the existing source-contact behavior is preserved.
+
+Deployment requires the `0014_candidateprofile_resume_contact` migration and a
+rebuild of the backend and frontend.
+
+Run document tests with a reachable renderer to verify actual PDF text order, tags,
+language, outline, metadata, and links across all three templates:
+
+```bash
+TEST_GOTENBERG_URL=http://localhost:3000 python backend/manage.py test core.tests.test_document_accessibility
+```
+
+Without `TEST_GOTENBERG_URL`, only the real-renderer test is skipped.
+
+### General checks
+
 ```bash
 # Backend unit and integration coverage
 python backend/manage.py test core.tests

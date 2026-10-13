@@ -1,7 +1,9 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { ActivatedRoute } from '@angular/router';
 import { ApiService, ApplicationRecord } from '../services/api.service';
+import { MatchRadarComponent } from '../components/match-radar.component';
 
 interface StatusDef {
   key: string;
@@ -10,7 +12,7 @@ interface StatusDef {
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, MatchRadarComponent],
   template: `
     <section class="page">
       <div class="page-head">
@@ -52,6 +54,13 @@ interface StatusDef {
           <div class="modal-head-actions"><span class="fit-badge" [class.good]="selected.job_detail.match?.meets_profile_threshold">{{ selected.job_detail.match?.normalized_score || 0 }}<small>calibrated · {{ selected.job_detail.match?.score || 0 }} raw</small></span><button class="icon-button" type="button" (click)="closeSelected()" aria-label="Close application workspace">×</button></div>
         </div>
 
+        <div class="tabs application-modal-tabs" role="tablist" aria-label="Application workspace sections">
+          <button type="button" role="tab" [class.active]="modalTab === 'application'" [attr.aria-selected]="modalTab === 'application'" (click)="modalTab = 'application'">Application</button>
+          <button type="button" role="tab" [class.active]="modalTab === 'opportunity'" [attr.aria-selected]="modalTab === 'opportunity'" (click)="modalTab = 'opportunity'">Opportunity</button>
+          <button type="button" role="tab" [class.active]="modalTab === 'match'" [attr.aria-selected]="modalTab === 'match'" (click)="modalTab = 'match'">Match analysis</button>
+        </div>
+
+        <ng-container *ngIf="modalTab === 'application'">
         <div class="edit-grid">
           <label>
             Status
@@ -71,6 +80,10 @@ interface StatusDef {
             Contact email
             <input [(ngModel)]="selected.contact_email" name="contactEmail">
           </label>
+          <label class="application-url-field">
+            Application form URL
+            <input type="url" [(ngModel)]="selected.application_form_url" name="applicationFormUrl" placeholder="https://…">
+          </label>
         </div>
 
         <label>
@@ -80,6 +93,7 @@ interface StatusDef {
 
         <div class="action-row">
             <button class="btn-primary" type="button" (click)="saveSelected()" [disabled]="saving"><span class="spinner" *ngIf="saving" aria-hidden="true"></span>{{ saving ? 'Saving…' : 'Save' }}</button>
+            <a class="btn-secondary" *ngIf="selected.application_form_url" [href]="selected.application_form_url" target="_blank" rel="noopener noreferrer">Open application form ↗</a>
             <button class="btn-secondary" type="button" (click)="requestRender()" *ngIf="selected.resume" [disabled]="requestingRender"><span class="spinner" *ngIf="requestingRender" aria-hidden="true"></span>{{ requestingRender ? 'Requesting…' : 'Render PDF bundle' }}</button>
             <span class="muted">{{ message }}</span>
         </div>
@@ -114,6 +128,35 @@ interface StatusDef {
           </div>
           <p class="muted" *ngIf="!selected.events.length">No activity recorded yet.</p>
         </div>
+        </ng-container>
+
+        <section class="modal-tab-content" *ngIf="modalTab === 'opportunity'">
+          <div class="opportunity-overview">
+            <div><span class="field-label">Work style</span><strong>{{ selected.job_detail.remote_policy || 'Not specified' }}</strong></div>
+            <div><span class="field-label">Seniority</span><strong>{{ selected.job_detail.seniority || 'Not specified' }}</strong></div>
+            <div><span class="field-label">Compensation</span><strong>{{ selected.job_detail.compensation || 'Not listed' }}</strong></div>
+            <div><span class="field-label">Freshness</span><strong>{{ selected.job_detail.freshness_status || 'Unknown' }}</strong></div>
+          </div>
+          <div class="action-row opportunity-links">
+            <a class="btn-secondary" *ngIf="selected.job_detail.application_url" [href]="selected.job_detail.application_url" target="_blank" rel="noopener noreferrer">Open job application ↗</a>
+            <a class="btn-secondary" *ngIf="selected.job_detail.source_url" [href]="selected.job_detail.source_url" target="_blank" rel="noopener noreferrer">View source posting ↗</a>
+          </div>
+          <div class="section-divider"><span>Job description</span></div>
+          <p class="opportunity-description">{{ selected.job_detail.description_text || 'No job description was saved for this opportunity.' }}</p>
+        </section>
+
+        <section class="modal-tab-content" *ngIf="modalTab === 'match'">
+          <div class="insight-callout"><span>✦</span><div><strong>Match summary</strong><p>{{ selected.job_detail.match?.explanation_json?.summary || 'No match summary yet.' }}</p></div></div>
+          <h3>Why this score</h3>
+          <app-match-radar [signals]="selected.job_detail.match?.signals" [jobTitle]="selected.job_detail.title" />
+          <div class="two-col detail-columns">
+            <div><h3>Covered skills</h3><div class="chip-row"><span class="status-chip good" *ngFor="let skill of selected.job_detail.match?.explanation_json?.covered_skills || []">{{ skill }}</span><span class="muted" *ngIf="!(selected.job_detail.match?.explanation_json?.covered_skills || []).length">No covered skills identified.</span></div></div>
+            <div><h3>Visible gaps</h3><div class="chip-row"><span class="status-chip warn" *ngFor="let gap of selected.job_detail.match?.missing_requirements || []">{{ gap }}</span><span class="muted" *ngIf="!(selected.job_detail.match?.missing_requirements || []).length">No obvious skill gaps.</span></div></div>
+          </div>
+          <h3>Evidence</h3>
+          <div class="list-row" *ngFor="let fact of selected.job_detail.match?.supporting_facts || []"><div><strong>{{ fact.title }}</strong><p>{{ fact.statement }}</p></div></div>
+          <p class="muted" *ngIf="!(selected.job_detail.match?.supporting_facts || []).length">No profile evidence was linked to this match yet.</p>
+        </section>
       </section>
       </div>
     </section>
@@ -125,6 +168,7 @@ export class PipelineComponent implements OnInit {
   currentPage = 1;
   readonly pageSize = 40;
   selected?: ApplicationRecord;
+  modalTab: 'application' | 'opportunity' | 'match' = 'application';
   loadingApplicationId: number | null = null;
   followUpLocal = '';
   message = '';
@@ -152,17 +196,20 @@ export class PipelineComponent implements OnInit {
     { key: 'archived', label: 'Archived' },
   ];
 
-  constructor(private api: ApiService) {}
+  constructor(private api: ApiService, private route: ActivatedRoute) {}
 
   ngOnInit(): void {
     this.load();
+    this.route.queryParamMap.subscribe((params) => {
+      const applicationId = Number(params.get('application'));
+      if (applicationId) this.openApplication(applicationId);
+    });
   }
 
   load(): void {
     this.api.applications({ page: String(this.currentPage) }).subscribe((page) => {
       this.applications = page.results;
       this.totalApplications = page.count;
-      if (this.selected && !this.applications.some((item) => item.id === this.selected?.id)) this.closeSelected();
     });
   }
 
@@ -184,10 +231,14 @@ export class PipelineComponent implements OnInit {
       this.ignoreNextCardClick = false;
       return;
     }
+    this.openApplication(application.id);
+  }
+
+  openApplication(applicationId: number): void {
     if (this.loadingApplicationId) return;
-    this.loadingApplicationId = application.id;
-    this.api.application(application.id).subscribe({
-      next: (detail) => { this.selected = detail; this.syncFollowUpLocal(); this.loadingApplicationId = null; },
+    this.loadingApplicationId = applicationId;
+    this.api.application(applicationId).subscribe({
+      next: (detail) => { this.selected = detail; this.modalTab = 'application'; this.syncFollowUpLocal(); this.loadingApplicationId = null; },
       error: () => { this.message = 'Could not open that application. Please try again.'; this.loadingApplicationId = null; },
     });
   }
@@ -250,7 +301,7 @@ export class PipelineComponent implements OnInit {
     });
   }
 
-  closeSelected(): void { this.selected = undefined; this.followUpLocal = ''; this.message = ''; }
+  closeSelected(): void { this.selected = undefined; this.modalTab = 'application'; this.followUpLocal = ''; this.message = ''; }
 
   syncFollowUpLocal(): void {
     if (!this.selected?.follow_up_at) {
@@ -268,6 +319,7 @@ export class PipelineComponent implements OnInit {
       notes: this.selected.notes,
       contact_name: this.selected.contact_name,
       contact_email: this.selected.contact_email,
+      application_form_url: this.selected.application_form_url,
       follow_up_at: this.followUpLocal ? new Date(this.followUpLocal).toISOString() : null,
     };
     this.api.updateApplication(this.selected.id, payload).subscribe((updated) => {

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from core.models import CandidatePreference, CandidateProfile, OnboardingResponse, ProfileDocument, ProfileFact
@@ -24,6 +24,21 @@ def authoritative_facts(owner):
     facts = ProfileFact.objects.filter(owner=owner)
     authoritative = facts.filter(metadata__source_of_truth=True)
     return authoritative if authoritative.exists() else facts
+
+
+def matching_facts(owner):
+    """Return primary profile facts plus corroborating verified evidence.
+
+    A designated source of truth controls profile presentation, but it should
+    not erase a verified resume's technical detail during matching.  This keeps
+    the primary profile authoritative while allowing a clearly substantiated
+    capability such as Python/Django to count as evidence.
+    """
+    primary = authoritative_facts(owner)
+    corroborating = ProfileFact.objects.filter(owner=owner).filter(
+        Q(verified_by_user=True) | Q(lifecycle='verified'),
+    )
+    return (primary | corroborating).distinct()
 
 
 def compute_profile_completeness(owner) -> int:

@@ -2,6 +2,8 @@ from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
 from django.test import override_settings
 from django.utils import timezone
+from types import SimpleNamespace
+from unittest.mock import patch
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -23,6 +25,7 @@ class OwnedRelationApiTests(APITestCase):
             title='Owner job',
             description_text='Python role',
             content_hash='owner-job',
+            application_url='https://jobs.example.com/owner/apply',
         )
         self.other_job = JobPosting.objects.create(
             owner=self.other,
@@ -95,6 +98,23 @@ class OwnedRelationApiTests(APITestCase):
         )
         self.assert_field_rejected(response, 'resume')
 
+    @patch('core.views.regenerate_application_materials_task.delay')
+    def test_material_regeneration_is_queued_for_owned_job(self, delay):
+        delay.return_value = SimpleNamespace(id='materials-task')
+
+        response = self.client.post(f'/api/jobs/{self.owner_job.id}/regenerate_materials/', {}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(response.data['task_id'], 'materials-task')
+        delay.assert_called_once_with(self.owner_job.id)
+
+    @patch('core.views.regenerate_application_materials_task.delay')
+    def test_material_regeneration_cannot_target_another_owners_job(self, delay):
+        response = self.client.post(f'/api/jobs/{self.other_job.id}/regenerate_materials/', {}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        delay.assert_not_called()
+
     def test_event_cannot_reference_another_owners_application(self):
         response = self.client.post('/api/application-events/', {
             'application': self.other_application.id,
@@ -132,6 +152,22 @@ class OwnedRelationApiTests(APITestCase):
             'content_text': 'Allowed',
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+
+    def test_application_form_url_defaults_from_job_and_is_editable(self):
+        self.assertEqual(self.owner_application.application_form_url, self.owner_job.application_url)
+
+        response = self.client.patch(
+            f'/api/applications/{self.owner_application.id}/',
+            {'application_form_url': 'https://ats.example.com/forms/owner-job'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data['application_form_url'], 'https://ats.example.com/forms/owner-job')
+
+        listing = self.client.get('/api/applications/')
+        self.assertEqual(listing.status_code, status.HTTP_200_OK, listing.data)
+        record = next(item for item in listing.data['results'] if item['id'] == self.owner_application.id)
+        self.assertEqual(record['application_form_url'], 'https://ats.example.com/forms/owner-job')
 
     def test_foreign_objects_are_not_addressable(self):
         paths = [

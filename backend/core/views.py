@@ -5,7 +5,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, OuterRef, Q, Subquery
 from django.http import FileResponse, Http404, HttpResponse
 from django.utils import timezone
 from rest_framework import status, viewsets
@@ -30,6 +30,7 @@ from .models import (
     JobSource,
     ProfileDocument,
     ProfileFact,
+    ProfileImprovementProposal,
     Resume,
     SourceRun,
 )
@@ -48,10 +49,12 @@ from .serializers import (
     CoverLetterSerializer,
     JobImportSerializer,
     JobMatchSerializer,
+    JobPostingListSerializer,
     JobPostingSerializer,
     JobSourceSerializer,
     ProfileDocumentSerializer,
     ProfileFactSerializer,
+    ProfileImprovementProposalSerializer,
     ResumeSerializer,
     ResumeTailorSerializer,
     RegistrationSerializer,
@@ -64,6 +67,7 @@ from .tasks import (
     ingest_profile_document_task,
     recompute_all_matches_task,
     recompute_job_match_task,
+    regenerate_application_materials_task,
     refresh_profile_search_task,
 )
 
@@ -285,7 +289,13 @@ class JobSourceViewSet(OwnedViewSet):
     queryset = JobSource.objects.all()
 
     def get_queryset(self):
-        return super().get_queryset().annotate(job_count=Count('jobs')).order_by('-updated_at', '-id')
+        return super().get_queryset().filter(kind='brave').annotate(job_count=Count('jobs')).order_by('-updated_at', '-id')
+
+    def perform_create(self, serializer):
+        if serializer.validated_data.get('kind') != 'brave':
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError({'kind': 'Discovery is limited to Brave web search.'})
+        serializer.save(owner=self.request.user)
 
     @action(detail=True, methods=['post'])
     def run(self, request, pk=None):
@@ -312,15 +322,32 @@ class SourceRunViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = SourceRun.objects.select_related('source').all()
 
     def get_queryset(self):
-        return self.queryset.filter(owner=self.request.user)
+        return self.queryset.filter(owner=self.request.user, source__kind='brave')
 
 
 class JobPostingViewSet(OwnedViewSet):
     serializer_class = JobPostingSerializer
-    queryset = JobPosting.objects.select_related('source', 'match').all()
+    queryset = JobPosting.objects.select_related('source', 'match').prefetch_related(
+        'match__signals', 'requirements', 'versions',
+    ).all()
+
+    def get_serializer_class(self):
+        return JobPostingListSerializer if self.action == 'list' else JobPostingSerializer
 
     def get_queryset(self):
         qs = super().get_queryset()
+        if self.action == 'list':
+            # Cards need scores and pipeline state, not every description,
+            # requirement, match signal, and evidence record.
+            qs = qs.prefetch_related(None)
+        latest_application = Application.objects.filter(
+            owner=self.request.user, job_id=OuterRef('pk'),
+        ).order_by('-updated_at', '-id')
+        qs = qs.annotate(
+            existing_application_id=Subquery(latest_application.values('id')[:1]),
+            existing_application_status=Subquery(latest_application.values('status')[:1]),
+            existing_application_updated_at=Subquery(latest_application.values('updated_at')[:1]),
+        )
         search = self.request.query_params.get('search')
         semantic_query = self.request.query_params.get('semantic_query')
         status_value = self.request.query_params.get('status')
@@ -378,6 +405,63 @@ class JobPostingViewSet(OwnedViewSet):
             return Response({'mode': 'sync', 'match_id': match.id})
 
     @action(detail=True, methods=['post'])
+    def profile_improvements(self, request, pk=None):
+        from .domain.profile_improvements import propose_profile_improvements
+
+        job = self.get_object()
+        proposal = propose_profile_improvements(job)
+        publish_user_event(request.user.id, 'profile_improvements_ready', {
+            'job_id': job.id,
+            'proposal_id': proposal.id,
+            'suggestion_count': len(proposal.suggestions),
+        })
+        return Response(ProfileImprovementProposalSerializer(proposal).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def apply_profile_improvements(self, request, pk=None):
+        from .domain.profile_improvements import apply_profile_improvements
+
+        job = self.get_object()
+        proposal_id = request.data.get('proposal_id')
+        accepted_ids = request.data.get('accepted_suggestion_ids', [])
+        if not isinstance(accepted_ids, list):
+            return Response(
+                {'detail': 'accepted_suggestion_ids must be a list.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        proposal = ProfileImprovementProposal.objects.filter(
+            owner=request.user, job=job, pk=proposal_id,
+        ).first()
+        if not proposal:
+            raise Http404
+        try:
+            applied_fact_ids = apply_profile_improvements(proposal, accepted_ids)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_409_CONFLICT)
+
+        rescore_mode = 'not_needed'
+        task_id = ''
+        if applied_fact_ids:
+            publish_user_event(request.user.id, 'profile_improvements_applied', {
+                'job_id': job.id,
+                'proposal_id': proposal.id,
+                'fact_ids': applied_fact_ids,
+            })
+            try:
+                task = refresh_profile_search_task.delay(request.user.id)
+                task_id = task.id
+                rescore_mode = 'async'
+            except Exception:
+                refresh_profile_search_task(request.user.id)
+                rescore_mode = 'sync'
+        return Response({
+            'proposal': ProfileImprovementProposalSerializer(proposal).data,
+            'applied_fact_ids': applied_fact_ids,
+            'rescore_mode': rescore_mode,
+            'task_id': task_id,
+        })
+
+    @action(detail=True, methods=['post'])
     def create_application(self, request, pk=None):
         job = self.get_object()
         application, _ = Application.objects.get_or_create(
@@ -409,6 +493,20 @@ class JobPostingViewSet(OwnedViewSet):
 
             execute_agent_run(run)
         return Response(AgentRunSerializer(run).data, status=status.HTTP_202_ACCEPTED)
+
+    @action(detail=True, methods=['post'])
+    def regenerate_materials(self, request, pk=None):
+        job = self.get_object()
+        publish_user_event(request.user.id, 'materials_regeneration_queued', {'job_id': job.id})
+        try:
+            task = regenerate_application_materials_task.delay(job.id)
+            return Response(
+                {'mode': 'async', 'task_id': task.id, 'job_id': job.id},
+                status=status.HTTP_202_ACCEPTED,
+            )
+        except Exception:
+            payload = regenerate_application_materials_task(job.id)
+            return Response({'mode': 'sync', **payload})
 
 
 class JobMatchViewSet(viewsets.ReadOnlyModelViewSet):
@@ -516,7 +614,7 @@ class CoverLetterViewSet(OwnedViewSet):
         letter = self.get_object()
         artifact = render_pdf(
             owner=request.user, title=letter.title, markdown=letter.content_markdown,
-            kind='cover_letter_pdf', cover_letter=letter,
+            kind='cover_letter', cover_letter=letter,
         )
         filename = Path(artifact.file.name).name
         return FileResponse(artifact.file.open('rb'), as_attachment=True, filename=filename, content_type=artifact.mime_type)
@@ -549,7 +647,10 @@ class ApplicationViewSet(OwnedViewSet):
             qs = qs.filter(Q(job__title__icontains=search) | Q(job__company__icontains=search) | Q(notes__icontains=search))
         if self.action == 'list':
             return qs.select_related('job', 'job__match', 'resume').annotate(artifact_count=Count('artifacts', distinct=True)).order_by('-updated_at', '-id')
-        qs = qs.select_related('job', 'job__match', 'resume', 'resume__target_job').prefetch_related('events', 'artifacts', 'job__cover_letters')
+        qs = qs.select_related('job', 'job__match', 'resume', 'resume__target_job').prefetch_related(
+            'events', 'artifacts', 'job__cover_letters', 'job__match__signals',
+            'job__requirements', 'job__versions',
+        )
         return qs.order_by('-updated_at', '-id')
 
     def perform_create(self, serializer):

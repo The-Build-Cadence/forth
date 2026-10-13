@@ -10,7 +10,7 @@ from pgvector.django import CosineDistance
 
 from core.ai import clean_text, cosine_similarity, embed_text_result, stable_hash
 from core.models import CandidatePreference, CandidateProfile, JobPosting, ProfileFact
-from core.domain.profiles import authoritative_facts
+from core.domain.profiles import matching_facts
 
 
 def _line(label: str, value: Any) -> str:
@@ -37,7 +37,7 @@ def profile_embedding_text(owner) -> str:
             f'{profile.compensation_currency} {profile.minimum_compensation}' if profile.minimum_compensation else '',
         ),
     ]
-    facts = authoritative_facts(owner).order_by(
+    facts = matching_facts(owner).order_by(
         '-verified_by_user', '-confidence', 'fact_type', 'id',
     )[:250]
     if facts:

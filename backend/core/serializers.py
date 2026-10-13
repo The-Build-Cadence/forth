@@ -27,6 +27,7 @@ from .models import (
     ProfileChunk,
     ProfileDocument,
     ProfileFact,
+    ProfileImprovementProposal,
     Resume,
     ResumeClaim,
     SourceRun,
@@ -128,12 +129,54 @@ class ProfileFactSerializer(serializers.ModelSerializer):
         read_only_fields = ['source_document', 'source_document_title', 'source_chunk', 'metadata', 'created_at', 'updated_at']
 
 
+class ProfileImprovementProposalSerializer(serializers.ModelSerializer):
+    job_title = serializers.CharField(source='job.title', read_only=True)
+    company = serializers.CharField(source='job.company', read_only=True)
+
+    class Meta:
+        model = ProfileImprovementProposal
+        fields = [
+            'id', 'job', 'job_title', 'company', 'status', 'source_score',
+            'suggestions', 'decision', 'applied_at', 'created_at', 'updated_at',
+        ]
+        read_only_fields = fields
+
+
+class ResumeContactSerializer(serializers.Serializer):
+    phone = serializers.RegexField(r'^\+?[0-9 ().-]+(?:\s*(?:ext\.?|x)\s*[0-9]+)?$', max_length=60, allow_blank=True)
+    email = serializers.EmailField(max_length=254, allow_blank=True)
+    linkedin_url = serializers.URLField(max_length=500, allow_blank=True)
+    include_phone = serializers.BooleanField()
+    include_email = serializers.BooleanField()
+    include_linkedin = serializers.BooleanField()
+
+    def validate_phone(self, value):
+        if value and not 7 <= sum(char.isdigit() for char in value) <= 21:
+            raise serializers.ValidationError('Enter a phone number including its area or country code.')
+        return value
+
+    def validate_linkedin_url(self, value):
+        from urllib.parse import urlsplit
+
+        if value:
+            parsed = urlsplit(value)
+            if parsed.scheme != 'https' or parsed.hostname not in {'linkedin.com', 'www.linkedin.com'} or not parsed.path.startswith('/in/') or not parsed.path[4:].strip('/') or parsed.username or parsed.password:
+                raise serializers.ValidationError('Enter an HTTPS LinkedIn profile URL, such as https://www.linkedin.com/in/your-name/.')
+        return value
+
+
 class CandidateProfileSerializer(serializers.ModelSerializer):
+    def validate_resume_contact(self, value):
+        # Validate a complete settings object even when the profile itself is PATCHed.
+        contact = ResumeContactSerializer(data=value)
+        contact.is_valid(raise_exception=True)
+        return contact.validated_data
+
     class Meta:
         model = CandidateProfile
         fields = [
             'id', 'headline', 'professional_summary', 'target_roles', 'target_industries',
-            'location', 'authorized_countries', 'work_modes', 'employment_types',
+            'location', 'resume_contact', 'authorized_countries', 'work_modes', 'employment_types',
             'minimum_compensation', 'compensation_currency', 'minimum_match_score', 'excluded_companies',
             'completeness', 'last_reviewed_at', 'onboarding_state',
             'onboarding_completed_at', 'embedding_model', 'embedding_provider',
@@ -166,6 +209,11 @@ class JobSourceSerializer(serializers.ModelSerializer):
             'last_status', 'last_message', 'job_count', 'created_at', 'updated_at',
         ]
         read_only_fields = ['last_run_at', 'last_status', 'last_message', 'job_count', 'created_at', 'updated_at']
+
+    def validate_kind(self, value):
+        if value != 'brave':
+            raise serializers.ValidationError('Discovery is limited to Brave web search.')
+        return value
 
 
 class SourceRunSerializer(serializers.ModelSerializer):
@@ -261,6 +309,7 @@ class JobMatchSummarySerializer(serializers.ModelSerializer):
 
 class JobPostingSerializer(OwnerScopedRelationsMixin, serializers.ModelSerializer):
     match = JobMatchSerializer(read_only=True)
+    application = serializers.SerializerMethodField()
     owner_related_fields = {'source': JobSource}
     requirements = JobRequirementSerializer(many=True, read_only=True)
     versions = JobPostingVersionSerializer(many=True, read_only=True)
@@ -272,7 +321,7 @@ class JobPostingSerializer(OwnerScopedRelationsMixin, serializers.ModelSerialize
             'seniority', 'compensation', 'description_text', 'extracted_json',
             'source_url', 'application_url', 'status', 'posted_at',
             'canonical_url', 'source_external_id', 'last_seen_at', 'expires_at',
-            'freshness_status', 'discovered_at', 'created_at', 'updated_at', 'match',
+            'freshness_status', 'discovered_at', 'created_at', 'updated_at', 'match', 'application',
             'requirements', 'versions', 'embedding_model', 'embedding_provider',
             'embedding_updated_at',
         ]
@@ -280,6 +329,16 @@ class JobPostingSerializer(OwnerScopedRelationsMixin, serializers.ModelSerialize
             'extracted_json', 'discovered_at', 'created_at', 'updated_at', 'match',
             'embedding_model', 'embedding_provider', 'embedding_updated_at',
         ]
+
+    def get_application(self, obj):
+        application_id = getattr(obj, 'existing_application_id', None)
+        if not application_id:
+            return None
+        return {
+            'id': application_id,
+            'status': getattr(obj, 'existing_application_status', ''),
+            'updated_at': getattr(obj, 'existing_application_updated_at', None),
+        }
 
 
 class JobPostingSummarySerializer(serializers.ModelSerializer):
@@ -289,6 +348,31 @@ class JobPostingSummarySerializer(serializers.ModelSerializer):
         model = JobPosting
         fields = ['id', 'title', 'company', 'location', 'remote_policy', 'freshness_status', 'match']
         read_only_fields = fields
+
+
+class JobPostingListSerializer(serializers.ModelSerializer):
+    """Lean opportunity-list payload; full analysis is fetched on selection."""
+
+    match = JobMatchSummarySerializer(read_only=True)
+    application = serializers.SerializerMethodField()
+
+    class Meta:
+        model = JobPosting
+        fields = [
+            'id', 'title', 'company', 'location', 'remote_policy', 'seniority',
+            'freshness_status', 'discovered_at', 'match', 'application',
+        ]
+        read_only_fields = fields
+
+    def get_application(self, obj):
+        application_id = getattr(obj, 'existing_application_id', None)
+        if not application_id:
+            return None
+        return {
+            'id': application_id,
+            'status': getattr(obj, 'existing_application_status', ''),
+            'updated_at': getattr(obj, 'existing_application_updated_at', None),
+        }
 
 
 class JobImportSerializer(serializers.Serializer):
@@ -439,6 +523,7 @@ class ApplicationSerializer(OwnerScopedRelationsMixin, serializers.ModelSerializ
         fields = [
             'id', 'job', 'job_detail', 'status', 'resume', 'resume_title',
             'resume_detail', 'cover_letters',
+            'application_form_url',
             'applied_at', 'follow_up_at', 'outcome', 'notes',
             'contact_name', 'contact_email', 'events', 'artifacts',
             'created_at', 'updated_at',
@@ -475,6 +560,7 @@ class ApplicationSummarySerializer(serializers.ModelSerializer):
         model = Application
         fields = [
             'id', 'job', 'job_detail', 'status', 'resume', 'resume_title', 'artifact_count',
+            'application_form_url',
             'applied_at', 'follow_up_at', 'contact_name', 'updated_at', 'created_at',
         ]
         read_only_fields = fields

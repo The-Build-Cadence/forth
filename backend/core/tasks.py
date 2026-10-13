@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from celery import shared_task
 
-from .models import AgentRun, CandidateProfile, JobPosting, JobSource, ProfileDocument, ProfileFact, SourceRun
+from .models import AgentRun, Application, ApplicationEvent, CandidateProfile, JobPosting, JobSource, ProfileDocument, ProfileFact, SourceRun
 from .realtime_events import publish_user_event
 from .services import ingest_profile_document, recompute_match
 
@@ -50,6 +50,56 @@ def recompute_all_matches_task(owner_id: int) -> dict:
         count += 1
     publish_user_event(owner_id, 'matches_recomputed', {'count': count})
     return {'count': count}
+
+
+@shared_task
+def regenerate_application_materials_task(job_id: int) -> dict:
+    """Create fresh, profile-aware resume and cover-letter versions for a job."""
+    from django.utils import timezone
+
+    from .domain.documents import prepare_application_materials
+
+    job = JobPosting.objects.select_related('owner').get(pk=job_id)
+    publish_user_event(job.owner_id, 'materials_regeneration_started', {'job_id': job.id})
+    application, _ = Application.objects.get_or_create(
+        owner=job.owner,
+        job=job,
+        defaults={'status': 'preparing'},
+    )
+    application.status = 'preparing'
+    application.save(update_fields=['status', 'updated_at'])
+    try:
+        materials = prepare_application_materials(job.owner, job, application=application)
+        ApplicationEvent.objects.create(
+            owner=job.owner,
+            application=application,
+            event_type='materials_regenerated',
+            happened_at=timezone.now(),
+            notes='Resume and cover letter regenerated from the latest verified profile evidence.',
+            metadata={
+                'resume_id': materials['resume'].id,
+                'cover_letter_id': materials['cover_letter'].id,
+                'cover_letter_version': materials['cover_letter'].version,
+            },
+        )
+        payload = {
+            'job_id': job.id,
+            'application_id': application.id,
+            'resume_id': materials['resume'].id,
+            'cover_letter_id': materials['cover_letter'].id,
+            'cover_letter_version': materials['cover_letter'].version,
+        }
+        publish_user_event(job.owner_id, 'materials_regenerated', payload)
+        return payload
+    except Exception as exc:
+        application.status = 'saved'
+        application.save(update_fields=['status', 'updated_at'])
+        publish_user_event(job.owner_id, 'materials_regeneration_failed', {
+            'job_id': job.id,
+            'application_id': application.id,
+            'error': str(exc)[:500],
+        })
+        raise
 
 
 @shared_task
@@ -104,8 +154,14 @@ def execute_source_run_task(run_id: int) -> dict:
 
 @shared_task
 def refresh_enabled_sources_task() -> dict:
+    from datetime import timedelta
+    from django.utils import timezone
+
     queued = 0
-    for source in JobSource.objects.filter(enabled=True).iterator():
+    for source in JobSource.objects.filter(enabled=True, kind='brave').iterator():
+        minutes = max(15, min(10080, int((source.config or {}).get('schedule_minutes') or 360)))
+        if source.last_run_at and source.last_run_at > timezone.now() - timedelta(minutes=minutes):
+            continue
         run = SourceRun.objects.create(owner=source.owner, source=source)
         execute_source_run_task.delay(run.id)
         queued += 1

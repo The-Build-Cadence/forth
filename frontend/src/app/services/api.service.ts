@@ -37,6 +37,15 @@ export interface ProfileFact {
   user_notes: string;
 }
 
+export interface ResumeContact {
+  phone: string;
+  email: string;
+  linkedin_url: string;
+  include_phone: boolean;
+  include_email: boolean;
+  include_linkedin: boolean;
+}
+
 export interface CandidateProfile {
   id: number;
   headline: string;
@@ -44,6 +53,7 @@ export interface CandidateProfile {
   target_roles: string[];
   target_industries: string[];
   location: string;
+  resume_contact?: Partial<ResumeContact>;
   authorized_countries: string[];
   work_modes: string[];
   employment_types: string[];
@@ -108,6 +118,11 @@ export interface JobSource {
   job_count: number;
 }
 
+export interface SourceRun {
+  id: number; source: number; source_name: string; status: string; started_at: string | null; completed_at: string | null;
+  discovered_count: number; imported_count: number; updated_count: number; error_count: number; log: any[]; created_at: string;
+}
+
 export interface JobMatch {
   id: number;
   job: number;
@@ -133,6 +148,30 @@ export interface MatchSignal {
   evidence: any[];
 }
 
+export interface ProfileImprovementSuggestion {
+  id: string;
+  fact_id: number;
+  fact_title: string;
+  current_statement: string;
+  proposed_statement: string;
+  rationale: string;
+  target_requirements: string[];
+}
+
+export interface ProfileImprovementProposal {
+  id: number;
+  job: number;
+  job_title: string;
+  company: string;
+  status: string;
+  source_score: number;
+  suggestions: ProfileImprovementSuggestion[];
+  decision: any;
+  applied_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface JobPosting {
   id: number;
   title: string;
@@ -149,9 +188,11 @@ export interface JobPosting {
   freshness_status: string;
   last_seen_at: string | null;
   posted_at: string | null;
+  discovered_at: string;
   requirements: any[];
   versions: any[];
   match?: JobMatch;
+  application?: { id: number; status: string; updated_at: string } | null;
 }
 
 export interface Resume {
@@ -237,6 +278,7 @@ export interface ApplicationRecord {
   id: number;
   job: number;
   job_detail: JobPosting;
+  application_form_url: string;
   status: string;
   resume: number | null;
   resume_title: string;
@@ -335,12 +377,28 @@ export class ApiService {
     return this.http.post<JobSource>(`${environment.apiBaseUrl}/sources/`, payload);
   }
 
+  updateSource(id: number, payload: Partial<JobSource>): Observable<JobSource> {
+    return this.http.patch<JobSource>(`${environment.apiBaseUrl}/sources/${id}/`, payload);
+  }
+
   runSource(id: number): Observable<any> {
     return this.http.post<any>(`${environment.apiBaseUrl}/sources/${id}/run/`, {});
   }
 
+  sourceRuns(): Observable<Paged<SourceRun>> {
+    return this.http.get<Paged<SourceRun>>(`${environment.apiBaseUrl}/source-runs/`);
+  }
+
+  sourceRun(id: number): Observable<SourceRun> {
+    return this.http.get<SourceRun>(`${environment.apiBaseUrl}/source-runs/${id}/`);
+  }
+
   jobs(params: Record<string, string> = {}): Observable<Paged<JobPosting>> {
     return this.http.get<Paged<JobPosting>>(`${environment.apiBaseUrl}/jobs/`, { params: new HttpParams({ fromObject: params }) });
+  }
+
+  job(id: number): Observable<JobPosting> {
+    return this.http.get<JobPosting>(`${environment.apiBaseUrl}/jobs/${id}/`);
   }
 
   importJob(payload: { text: string; source_url?: string; source?: number | null }): Observable<JobPosting> {
@@ -351,12 +409,27 @@ export class ApiService {
     return this.http.post(`${environment.apiBaseUrl}/jobs/${id}/recompute_match/`, {});
   }
 
+  proposeProfileImprovements(jobId: number): Observable<ProfileImprovementProposal> {
+    return this.http.post<ProfileImprovementProposal>(`${environment.apiBaseUrl}/jobs/${jobId}/profile_improvements/`, {});
+  }
+
+  applyProfileImprovements(jobId: number, proposalId: number, acceptedSuggestionIds: string[]): Observable<any> {
+    return this.http.post(`${environment.apiBaseUrl}/jobs/${jobId}/apply_profile_improvements/`, {
+      proposal_id: proposalId,
+      accepted_suggestion_ids: acceptedSuggestionIds,
+    });
+  }
+
   createApplication(jobId: number): Observable<ApplicationRecord> {
     return this.http.post<ApplicationRecord>(`${environment.apiBaseUrl}/jobs/${jobId}/create_application/`, {});
   }
 
   requestPreparation(jobId: number): Observable<AgentRun> {
     return this.http.post<AgentRun>(`${environment.apiBaseUrl}/jobs/${jobId}/request_preparation/`, {});
+  }
+
+  regenerateApplicationMaterials(jobId: number): Observable<any> {
+    return this.http.post(`${environment.apiBaseUrl}/jobs/${jobId}/regenerate_materials/`, {});
   }
 
   resumes(params: Record<string, string> = {}): Observable<Paged<Resume>> {

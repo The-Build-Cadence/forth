@@ -1,6 +1,11 @@
 .resume-studio-page { max-width: none; }
 .resume-studio-head .page-intro { max-width: 900px; }
-.resume-studio-page .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: min(100%, 1280px); }
+.resume-studio-page .tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(100%, 1280px); }
+.resume-contact-panel { max-width: 800px; }
+.resume-contact-field { margin: 0 0 22px; }
+.resume-contact-toggle { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.resume-contact-toggle input { width: auto; }
+.resume-paper a { overflow-wrap: anywhere; color: var(--document-accent); }
 .resume-studio-page .tabs button { justify-content: center; min-width: 0; padding: 12px 18px; white-space: normal; }
 .generation-workflow, .source-resume-panel { max-width: min(1280px, 100%); }
 .generation-workflow .generation-hero { align-items: center; margin-bottom: 20px; padding: 22px; border-color: #214940; color: #fff; background: radial-gradient(circle at 92% 8%,rgba(177,250,74,.26),transparent 28%),linear-gradient(115deg,#102f28,#173c34); }
@@ -83,7 +88,7 @@
   .material-library { position: static; max-height: 520px; overflow: auto; }
 }
 @media (max-width: 700px) {
-  .resume-studio-page .tabs { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); width: 100%; overflow: visible; }
+  .resume-studio-page .tabs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); width: 100%; overflow: visible; }
   .resume-studio-page .tabs button { min-width: 0; padding: 9px 7px; font-size: .72rem; line-height: 1.25; white-space: normal; }
   .generation-steps, .resume-review-grid { grid-template-columns: 1fr; }
   .result-toolbar { display: grid; padding: 17px; }

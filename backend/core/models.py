@@ -43,6 +43,8 @@ class CandidateProfile(models.Model):
     target_roles = models.JSONField(default=list, blank=True)
     target_industries = models.JSONField(default=list, blank=True)
     location = models.CharField(max_length=220, blank=True)
+    # Empty means legacy source contacts are preserved until the user configures them.
+    resume_contact = models.JSONField(default=dict, blank=True)
     authorized_countries = models.JSONField(default=list, blank=True)
     work_modes = models.JSONField(default=list, blank=True)
     employment_types = models.JSONField(default=list, blank=True)
@@ -117,6 +119,7 @@ class CandidatePreference(OwnedModel):
 
 class ProfileDocument(OwnedModel):
     KIND_CHOICES = [
+        ('brave', 'Brave web discovery'),
         ('resume', 'Resume'),
         ('note', 'Note'),
         ('conversation', 'Conversation'),
@@ -208,14 +211,10 @@ class ProfileFact(OwnedModel):
 
 class JobSource(OwnedModel):
     KIND_CHOICES = [
-        ('manual', 'Manual'),
-        ('company_page', 'Company Page'),
-        ('ats', 'ATS'),
-        ('api', 'API'),
-        ('rss', 'RSS'),
+        ('brave', 'Brave web discovery'),
     ]
 
-    kind = models.CharField(max_length=32, choices=KIND_CHOICES, default='manual', db_index=True)
+    kind = models.CharField(max_length=32, choices=KIND_CHOICES, default='brave', db_index=True)
     name = models.CharField(max_length=220)
     config = models.JSONField(default=dict, blank=True)
     enabled = models.BooleanField(default=True, db_index=True)
@@ -256,6 +255,28 @@ class SourceRun(OwnedModel):
     class Meta:
         ordering = ['-created_at', '-id']
         indexes = [models.Index(fields=['owner', 'source', 'status'])]
+
+
+class SourceSearchQuery(OwnedModel):
+    """Durable memory of Brave query combinations tried for a source."""
+
+    source = models.ForeignKey(JobSource, on_delete=models.CASCADE, related_name='search_queries')
+    query_hash = models.CharField(max_length=64)
+    query = models.CharField(max_length=500)
+    components = models.JSONField(default=dict, blank=True)
+    search_count = models.PositiveIntegerField(default=0)
+    last_searched_at = models.DateTimeField(null=True, blank=True)
+    last_result_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['search_count', 'last_searched_at', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['source', 'query_hash'], name='unique_source_search_query_hash'),
+        ]
+        indexes = [
+            models.Index(fields=['source', 'search_count', 'last_searched_at'], name='core_source_source__b80936_idx'),
+            models.Index(fields=['owner', 'source'], name='core_source_owner_i_dfb0cf_idx'),
+        ]
 
 
 class JobPosting(OwnedModel):
@@ -394,6 +415,29 @@ class MatchSignal(OwnedModel):
         indexes = [models.Index(fields=['owner', 'match', 'kind'])]
 
 
+class ProfileImprovementProposal(OwnedModel):
+    STATUS_CHOICES = [
+        ('pending', 'Pending review'),
+        ('applied', 'Applied'),
+        ('rejected', 'Rejected'),
+        ('superseded', 'Superseded'),
+    ]
+
+    job = models.ForeignKey(JobPosting, on_delete=models.CASCADE, related_name='profile_improvement_proposals')
+    status = models.CharField(max_length=24, choices=STATUS_CHOICES, default='pending', db_index=True)
+    source_score = models.PositiveSmallIntegerField(default=0)
+    suggestions = models.JSONField(default=list, blank=True)
+    decision = models.JSONField(default=dict, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [models.Index(fields=['owner', 'job', 'status'])]
+
+    def __str__(self) -> str:
+        return f'Profile improvements for {self.job} ({self.status})'
+
+
 class Resume(OwnedModel):
     KIND_CHOICES = [
         ('canonical', 'Canonical'),
@@ -470,6 +514,7 @@ class Application(OwnedModel):
     ]
 
     job = models.ForeignKey(JobPosting, on_delete=models.CASCADE, related_name='applications')
+    application_form_url = models.URLField(max_length=1000, blank=True)
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='saved', db_index=True)
     resume = models.ForeignKey(Resume, null=True, blank=True, on_delete=models.SET_NULL, related_name='applications')
     applied_at = models.DateTimeField(null=True, blank=True)
@@ -488,6 +533,12 @@ class Application(OwnedModel):
 
     def __str__(self) -> str:
         return f'{self.job} ({self.status})'
+
+    def save(self, *args, **kwargs):
+        if not self.application_form_url and self.job_id:
+            job = self.job
+            self.application_form_url = job.application_url or job.source_url
+        super().save(*args, **kwargs)
 
 
 class ApplicationEvent(OwnedModel):
