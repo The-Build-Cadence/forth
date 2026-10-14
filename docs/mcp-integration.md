@@ -13,13 +13,13 @@ Configure an MCP client to run the following command from the repository root. R
       "command": "docker",
       "args": [
         "compose",
-        "-f", "/home/mahfouz/projects/job-seeker/docker-compose.yml",
+        "-f", "/absolute/path/to/forth/docker-compose.yml",
         "run", "--rm", "-i",
         "-e", "FORTH_MCP_OWNER_EMAIL=you@example.com",
         "mcp"
       ],
       "env": {
-        "COMPOSE_PROJECT_NAME": "job-seeker"
+        "COMPOSE_PROJECT_NAME": "forth"
       }
     }
   }

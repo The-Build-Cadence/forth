@@ -1,3 +1,5 @@
+name: forth
+
 x-backend-env: &backend_env
   DATABASE_URL: postgresql://job_seeker:job_seeker@db:5432/job_seeker
   REDIS_URL: redis://redis:6379/0
@@ -35,7 +37,9 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    command: ["redis-server", "--save", "60 1", "--appendonly", "no"]
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -145,6 +149,9 @@ services:
 
 volumes:
   db_data:
+    name: ${FORTH_DB_VOLUME:-forth_db_data}
+  redis_data:
+    name: ${FORTH_REDIS_VOLUME:-forth_redis_data}
 
 secrets:
   openai_api_key:

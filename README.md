@@ -61,7 +61,15 @@ preferences are ready for use.
 
 ## Local Docker Run
 
-The local `.env` file has been copied from the Drawing Algorithms project for OpenAI credentials and then narrowed to this app's runtime keys.
+Clone the repository and configure your own local credentials:
+
+```bash
+git clone git@github.com:The-Build-Cadence/forth.git
+cd forth
+cp .env.example .env
+```
+
+Set your OpenAI key and Django settings in `.env` before starting the app.
 
 ```bash
 docker compose up --build
@@ -238,3 +246,19 @@ Forth can be used as an owner-scoped local MCP server for browser-assisted job r
 
 The browser suite expects the Docker stack at `http://127.0.0.1:8021` and the
 local `admin` / `adminpass` account. Override the origin with `E2E_BASE_URL`.
+
+## Persistent storage and project name
+
+Compose uses the project name `forth`, so containers are named `forth-<service>-1`
+regardless of the checkout directory. Uploaded files live in `./data`; PostgreSQL
+and Redis use named volumes. Redis snapshots its state when data changes.
+
+New installations use `forth_db_data` and `forth_redis_data`. Existing installations
+can set `FORTH_DB_VOLUME` and `FORTH_REDIS_VOLUME` in their private `.env` to reuse
+previous volumes. The local override marks migrated volumes as external so Compose
+does not manage their lifecycle. Keep these settings and `data/` when moving the
+checkout. Do not use `docker compose down -v` when you need to retain managed data.
+
+The original database and role names remain `job_seeker` for compatibility with
+existing data; changing the repository or container names does not require a
+database rename.
