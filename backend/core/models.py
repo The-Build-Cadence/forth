@@ -7,6 +7,7 @@ import uuid
 from django.conf import settings
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
 from pgvector.django import HalfVectorField
 
 
@@ -691,3 +692,24 @@ class ApprovalRequest(OwnedModel):
     class Meta:
         ordering = ['-created_at', '-id']
         indexes = [models.Index(fields=['owner', 'status', 'kind'])]
+
+
+class ProviderUsage(models.Model):
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(default=timezone.now)
+    provider = models.CharField(max_length=20)
+    operation = models.CharField(max_length=40)
+    model = models.CharField(max_length=120, blank=True)
+    origin = models.CharField(max_length=20)
+    workflow = models.CharField(max_length=160, blank=True)
+    status = models.CharField(max_length=20, default='pending')
+    input_tokens = models.PositiveBigIntegerField(null=True)
+    output_tokens = models.PositiveBigIntegerField(null=True)
+    cached_tokens = models.PositiveBigIntegerField(null=True)
+    cost_usd = models.DecimalField(max_digits=20, decimal_places=10, null=True)
+    rates = models.JSONField(default=list)
+    provider_request_id = models.CharField(max_length=200, blank=True)
+    error_type = models.CharField(max_length=80, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['owner', 'provider', 'created_at'])]

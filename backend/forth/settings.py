@@ -1,5 +1,7 @@
 from pathlib import Path
 import os
+import json
+from copy import deepcopy
 
 import dj_database_url
 
@@ -32,6 +34,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'core.middleware.PrivateResponseMiddleware',
+    'core.middleware.UsageContextMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -167,7 +170,6 @@ OPENAI_TEXT_MODEL = os.environ.get('OPENAI_TEXT_MODEL', 'gpt-4.1-mini')
 OPENAI_EMBEDDING_MODEL = os.environ.get('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-large')
 OPENAI_EMBEDDING_DIMENSIONS = int(os.environ.get('OPENAI_EMBEDDING_DIMENSIONS', '3072'))
 OPENAI_TIMEOUT_SECONDS = float(os.environ.get('OPENAI_TIMEOUT_SECONDS', '20'))
-OPENAI_MAX_RETRIES = int(os.environ.get('OPENAI_MAX_RETRIES', '0'))
 SOURCE_HTTP_TIMEOUT_SECONDS = int(os.environ.get('SOURCE_HTTP_TIMEOUT_SECONDS', '20'))
 GOTENBERG_URL = os.environ.get('GOTENBERG_URL', 'http://gotenberg:3000')
 GOTENBERG_TIMEOUT_SECONDS = int(os.environ.get('GOTENBERG_TIMEOUT_SECONDS', '45'))
@@ -207,3 +209,16 @@ CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
 # Enable only behind a proxy that overwrites this header, never a client-facing app server.
 if os.environ.get('DJANGO_TRUST_PROXY_HEADERS', '0') == '1':
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Standard USD rates per million input / cached input / output tokens.
+# Verified against official model pages; unknown models remain unpriced.
+OPENAI_USAGE_RATES = {
+    'gpt-4.1-mini': ['0.40', '0.10', '1.60'],
+    'text-embedding-3-large': ['0.13', '0.13', '0'],
+    **json.loads(os.environ.get('OPENAI_USAGE_RATES_JSON') or '{}'),
+}
+BRAVE_COST_PER_1000_REQUESTS = os.environ.get('BRAVE_COST_PER_1000_REQUESTS', '5')
+# Independent commits protect accounting from application transaction rollbacks.
+DATABASES['usage'] = deepcopy(DATABASES['default'])
+DATABASES['usage']['ATOMIC_REQUESTS'] = False
+DATABASES['usage']['TEST'] = {'MIRROR': 'default'}

@@ -316,3 +316,62 @@ class BraveQueryMemoryTests(TestCase):
         run.refresh_from_db()
         self.assertEqual((run.status, run.discovered_count, run.imported_count), ('succeeded', 0, 0))
         self.assertEqual(next(event for event in run.log if event['level'] == 'evaluate')['count'], 0)
+
+
+class BraveResultCapacityTests(TestCase):
+    def setUp(self):
+        self.owner = get_user_model().objects.create_user(username='brave-capacity')
+        self.source = JobSource.objects.create(owner=self.owner, name='Brave', kind='brave',
+            config={'queries': ['platform engineer Canada'], 'queries_per_run': 1})
+
+    @override_settings(BRAVE_SEARCH_API_KEY='test-key')
+    def test_requests_twenty_results_in_one_call_and_clamps_oversized_config(self):
+        rows = [{'title': f'Platform Engineer {i}', 'url': f'https://jobs.lever.co/example/{i}',
+                 'description': 'Platform engineering in Canada.'} for i in range(20)]
+        response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {'web': {'results': rows}, 'query': {'more_results_available': True}})
+        for configured in (None, 100):
+            SourceSearchQuery.objects.filter(source=self.source).delete()
+            self.source.config['results_per_query'] = configured
+            with patch('core.domain.sourcing.requests.get', return_value=response) as request:
+                records = BraveSearchConnector(self.source).fetch()
+            self.assertEqual(request.call_count, 1)
+            self.assertEqual(request.call_args.kwargs['params']['count'], 20)
+            self.assertEqual(len(records), 20)
+
+    def test_twenty_qualified_jobs_can_be_saved_including_results_after_the_old_cutoff(self):
+        records = [SourceRecord(str(i), f'Engineer {i:03d}', '', '', 'Platform engineering',
+            f'https://jobs.lever.co/example/{i}', '') for i in range(110)]
+        profile = SimpleNamespace(semantic_embedding=[1., 0.])
+
+        def assess(_profile, record, **kwargs):
+            eligible = int(record.external_id) >= 80
+            return {'eligible': eligible, 'reason_code': 'qualified' if eligible else 'role_mismatch',
+                    'reason': '', 'lexical_score': 80 if eligible else 0}
+
+        with patch('core.domain.sourcing.refresh_profile_embedding', return_value=profile), \
+             patch('core.domain.sourcing.profile_embedding_text', return_value='Platform engineer'), \
+             patch('core.domain.sourcing.cheap_assessment', side_effect=assess), \
+             patch('core.domain.sourcing._verify_job_page', return_value=None) as verify, \
+             patch('core.domain.sourcing.cache.get', return_value=[1., 0.]):
+            selected = _triage_records(self.source, records)
+        self.assertEqual(len(selected), 20)
+        self.assertEqual(verify.call_count, 30)
+        self.assertTrue(all(int(record.external_id) >= 80 for record in selected))
+        self.assertEqual(sum(record.payload['triage']['reason_code'] == 'run_limit' for record in records), 10)
+
+    def test_migration_updates_legacy_defaults_without_resetting_other_preferences(self):
+        from importlib import import_module
+        from django.apps import apps
+        migration = import_module('core.migrations.0017_expand_brave_discovery')
+        self.source.config = {'results_per_query': 5, 'max_candidates': 5, 'queries_per_run': 2,
+                              'queries': ['custom search'], 'min_triage_score': 75}
+        self.source.save()
+        migration.expand_brave_discovery(apps, SimpleNamespace(connection=SimpleNamespace(alias='default')))
+        self.source.refresh_from_db()
+        self.assertEqual(self.source.config, {'results_per_query': 20, 'max_candidates': 20, 'queries_per_run': 2,
+                              'queries': ['custom search'], 'min_triage_score': 75})
+        self.source.config['max_candidates'] = 3
+        self.source.save()
+        migration.expand_brave_discovery(apps, SimpleNamespace(connection=SimpleNamespace(alias='default')))
+        self.source.refresh_from_db()
+        self.assertEqual(self.source.config['max_candidates'], 3)

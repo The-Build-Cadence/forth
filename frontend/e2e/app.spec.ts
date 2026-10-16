@@ -9,7 +9,6 @@ const routes = [
   ['/profile', 'The system should know the whole story.'],
   ['/sources', 'A quiet, reliable discovery engine.'],
   ['/strategy', 'Strategy'],
-  ['/artifacts', 'Artifact library'],
   ['/settings', 'Settings'],
 ] as const;
 
@@ -192,11 +191,11 @@ test('job import, scoring, approval, tailoring, and final PDF flow works', async
   await expect(renderApproval.getByRole('button', { name: /Rendering PDFs/ })).toBeDisabled();
   await expect(renderApproval).toBeHidden({ timeout: 90_000 });
 
-  await page.goto('/artifacts');
-  const finalArtifact = page.locator('.artifact-card').filter({ hasText: title }).first();
+  await page.goto('/pipeline');
+  await page.locator('.application-card').filter({ hasText: title }).click();
+  const finalArtifact = page.locator('.material-downloads article').filter({ has: page.getByRole('button', { name: 'Download', exact: true }) }).filter({ hasText: title }).first();
   await expect(finalArtifact).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator('.artifact-card').filter({ hasText: 'PDF' }).first()).toBeVisible();
   const download = page.waitForResponse((response) => /\/api\/artifacts\/\d+\/download\/$/.test(response.url()));
-  await finalArtifact.getByRole('button', { name: /Open artifact/ }).click();
+  await finalArtifact.getByRole('button', { name: 'Download', exact: true }).click();
   expect((await download).status()).toBe(200);
 });

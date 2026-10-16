@@ -5,12 +5,13 @@ import { filter, Subscription } from 'rxjs';
 import { AuthService } from './services/auth.service';
 import { RealtimeService, RealtimeStatus } from './services/realtime.service';
 import { ApiService } from './services/api.service';
+import { UsageIndicatorComponent } from './usage-indicator.component';
 import { OnboardingWizardComponent } from './onboarding/onboarding-wizard.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, OnboardingWizardComponent],
+  imports: [CommonModule, RouterOutlet, RouterLink, OnboardingWizardComponent, UsageIndicatorComponent],
   template: `
     <div class="app-shell" *ngIf="auth.hasSession(); else authOnly">
       <header class="mobile-header">
@@ -45,8 +46,9 @@ import { OnboardingWizardComponent } from './onboarding/onboarding-wizard.compon
           <span class="nav-section-label nav-section-spaced">Knowledge & tools</span>
           <a routerLink="/profile" [class.active]="active('/profile')" [attr.aria-current]="active('/profile') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">◎</span>Candidate Profile</a>
           <a routerLink="/sources" [class.active]="active('/sources')" [attr.aria-current]="active('/sources') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">⌁</span>Sources</a>
-          <a routerLink="/artifacts" [class.active]="active('/artifacts')" [attr.aria-current]="active('/artifacts') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">□</span>Artifacts</a>
         </nav>
+
+        <app-usage-indicator></app-usage-indicator>
 
         <div class="side-nav-context">
           <div class="connection-row">

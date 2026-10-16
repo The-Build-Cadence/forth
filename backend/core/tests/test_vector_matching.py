@@ -4,6 +4,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from core.ai import embed_text_result
+from core.usage import usage_context
 from core.domain.embeddings import (
     job_embedding_text,
     profile_embedding_text,
@@ -205,7 +206,8 @@ class VectorMatchingTests(TestCase):
         )
         client_factory.return_value = client
 
-        result = embed_text_result('Staff platform engineering')
+        with usage_context(self.user):
+            result = embed_text_result('Staff platform engineering')
 
         self.assertEqual(result.provider, 'openai')
         self.assertEqual(result.model, 'text-embedding-3-large')

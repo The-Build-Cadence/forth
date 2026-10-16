@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 
 from core.tasks import refresh_profile_search_task
+from core.usage import usage_context
 
 
 class Command(BaseCommand):
@@ -35,8 +36,9 @@ class Command(BaseCommand):
                 provider = ''
                 model = ''
                 for job in JobPosting.objects.filter(owner=user).iterator():
-                    refresh_job_embedding(job, force=options['force'])
-                    recompute_match(job)
+                    with usage_context(user, 'background', 'rebuild_search_embeddings'):
+                        refresh_job_embedding(job, force=options['force'])
+                        recompute_match(job)
                     job.refresh_from_db(fields=['embedding_provider', 'embedding_model'])
                     provider = job.embedding_provider
                     model = job.embedding_model

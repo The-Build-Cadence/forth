@@ -1,7 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, HostListener, NgZone, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { timeout } from 'rxjs';
 import { ApiService, ApplicationRecord } from '../services/api.service';
 import { MatchRadarComponent } from '../components/match-radar.component';
 
@@ -25,10 +26,11 @@ interface StatusDef {
       </div>
 
       <div class="board-toolbar"><div><strong>{{ totalApplications }} opportunities</strong><span>Drag a card to update its status · select a card to open its workspace</span></div><span class="status-chip good">● Live pipeline</span></div>
-      <section class="pipeline-board" aria-label="Application pipeline">
-        <div class="pipeline-col" *ngFor="let status of statuses" [class.drop-target]="dropTargetStatus === status.key" (dragover)="allowDrop($event, status.key)" (dragleave)="clearDropTarget(status.key)" (drop)="dropApplication($event, status.key)">
+      <section class="pipeline-board" [class.is-dragging]="draggedApplicationId !== null" aria-label="Application pipeline">
+        <div class="pipeline-col" *ngFor="let status of statuses" [class.drop-target]="dropTargetStatus === status.key" [attr.data-pipeline-status]="status.key">
           <div class="pipeline-col-head"><h2>{{ status.label }}</h2><span>{{ byStatus(status.key).length }}</span></div>
-          <button class="application-card" type="button" *ngFor="let app of byStatus(status.key)" [class.selected]="selected?.id === app.id" [class.dragging]="draggedApplicationId === app.id" [attr.draggable]="loadingApplicationId !== app.id" (dragstart)="startDrag($event, app)" (dragend)="endDrag()" (click)="select(app)" [disabled]="loadingApplicationId === app.id">
+          <button class="application-card" type="button" *ngFor="let app of byStatus(status.key); trackBy: applicationId" [class.selected]="selected?.id === app.id" [class.dragging]="draggedApplicationId === app.id" draggable="false" (dragstart)="$event.preventDefault()" (pointerdown)="startDrag($event, app)" (pointermove)="moveDrag($event)" (pointerup)="finishDrag($event)" (pointercancel)="cancelDrag()" (lostpointercapture)="cancelDrag()" (click)="select(app)" [disabled]="loadingApplicationId === app.id">
+            <span class="card-drag-handle" aria-hidden="true" title="Drag to move this application">⠿</span>
             <strong>{{ app.job_detail.title }}</strong>
             <p>{{ app.job_detail.company || 'Unknown company' }} · {{ app.job_detail.location || app.job_detail.remote_policy }}</p>
             <div class="card-chip-row"><span class="status-chip" [class.good]="app.job_detail.match?.meets_profile_threshold">{{ app.job_detail.match?.normalized_score || 0 }} calibrated · {{ app.job_detail.match?.score || 0 }} raw</span><span class="status-chip" [class.good]="app.job_detail.match?.hard_filter_status === 'pass'">{{ app.job_detail.match?.hard_filter_status || 'unreviewed' }}</span></div>
@@ -37,6 +39,7 @@ interface StatusDef {
           <div class="column-empty" *ngIf="!byStatus(status.key).length">No applications</div>
         </div>
       </section>
+      <div class="application-drag-preview" *ngIf="draggedApplicationId !== null" aria-hidden="true" [style.left.px]="dragX + 14" [style.top.px]="dragY + 14">{{ dragTitle }}<small>Release over a stage · Esc to cancel</small></div>
       <p class="board-status" role="status" aria-live="polite">{{ boardMessage }}</p>
       <nav class="pagination" *ngIf="pageCount > 1" aria-label="Application pages">
         <button class="btn-secondary" type="button" (click)="goToPage(currentPage - 1)" [disabled]="currentPage === 1">← Newer</button>
@@ -164,7 +167,7 @@ interface StatusDef {
     </section>
   `,
 })
-export class PipelineComponent implements OnInit {
+export class PipelineComponent implements OnInit, OnDestroy {
   applications: ApplicationRecord[] = [];
   totalApplications = 0;
   currentPage = 1;
@@ -180,6 +183,18 @@ export class PipelineComponent implements OnInit {
   dropTargetStatus: string | null = null;
   boardMessage = '';
   private ignoreNextCardClick = false;
+  private clickReset?: ReturnType<typeof setTimeout>;
+  private dragFrame?: number;
+  private cancelledPointerId?: number;
+  private pointerDrag?: { pointerId: number; application: ApplicationRecord; element: HTMLElement; startX: number; startY: number };
+  dragX = 0;
+  dragY = 0;
+  dragTitle = '';
+
+  applicationId(_index: number, app: ApplicationRecord): number { return app.id; }
+
+  ngOnDestroy(): void { this.resetDrag(); clearTimeout(this.clickReset); }
+
   statuses: StatusDef[] = [
     { key: 'review', label: 'Review' },
     { key: 'discovered', label: 'Discovered' },
@@ -198,7 +213,7 @@ export class PipelineComponent implements OnInit {
     { key: 'archived', label: 'Archived' },
   ];
 
-  constructor(private api: ApiService, private route: ActivatedRoute) {}
+  constructor(private api: ApiService, private route: ActivatedRoute, private zone: NgZone) {}
 
   ngOnInit(): void {
     this.load();
@@ -245,49 +260,112 @@ export class PipelineComponent implements OnInit {
     });
   }
 
-  startDrag(event: DragEvent, application: ApplicationRecord): void {
-    if (!event.dataTransfer || this.loadingApplicationId) {
-      event.preventDefault();
+  startDrag(event: PointerEvent, application: ApplicationRecord): void {
+    if (!event.isPrimary || event.button !== 0 || this.loadingApplicationId || this.pointerDrag) return;
+    // Touch users can still scroll the board from the card body.
+    if (event.pointerType === 'touch' && !(event.target as Element).closest('.card-drag-handle')) return;
+    this.cancelledPointerId = undefined;
+    const element = event.currentTarget as HTMLElement;
+    this.pointerDrag = { pointerId: event.pointerId, application, element, startX: event.clientX, startY: event.clientY };
+    this.dragX = event.clientX;
+    this.dragY = event.clientY;
+    element.setPointerCapture(event.pointerId);
+  }
+
+  moveDrag(event: PointerEvent): void {
+    const drag = this.pointerDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    this.dragX = event.clientX;
+    this.dragY = event.clientY;
+    if (this.draggedApplicationId === null) {
+      if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 6) return;
+      this.draggedApplicationId = drag.application.id;
+      this.dragTitle = drag.application.job_detail.title;
+      this.boardMessage = `Moving ${this.dragTitle}. Release over a stage, or press Escape to cancel.`;
+      this.zone.runOutsideAngular(() => { this.dragFrame = requestAnimationFrame(() => this.scrollDuringDrag()); });
+    }
+    event.preventDefault();
+    this.updateDropTarget();
+  }
+
+  private updateDropTarget(): void {
+    const column = document.elementFromPoint(this.dragX, this.dragY)?.closest('[data-pipeline-status]');
+    this.dropTargetStatus = column?.getAttribute('data-pipeline-status') || null;
+  }
+
+  private scrollDuringDrag(): void {
+    if (this.draggedApplicationId === null) return;
+    const edge = 70;
+    const delta = this.dragY < edge ? -Math.min(18, (edge - this.dragY) / 3)
+      : this.dragY > window.innerHeight - edge ? Math.min(18, (this.dragY - window.innerHeight + edge) / 3) : 0;
+    if (delta) {
+      const previousY = window.scrollY;
+      window.scrollBy({ top: delta, behavior: 'instant' });
+      if (window.scrollY !== previousY) this.zone.run(() => this.updateDropTarget());
+    }
+    this.dragFrame = requestAnimationFrame(() => this.scrollDuringDrag());
+  }
+
+  finishDrag(event: PointerEvent): void {
+    if (event.pointerId === this.cancelledPointerId) {
+      this.cancelledPointerId = undefined;
+      this.suppressReleaseClick();
       return;
     }
-    this.draggedApplicationId = application.id;
-    this.boardMessage = `Moving ${application.job_detail.title}.`;
-    event.dataTransfer.effectAllowed = 'move';
-    event.dataTransfer.setData('text/plain', String(application.id));
+    const drag = this.pointerDrag;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    const moved = this.draggedApplicationId !== null;
+    this.dragX = event.clientX;
+    this.dragY = event.clientY;
+    this.updateDropTarget();
+    const target = this.dropTargetStatus;
+    this.resetDrag();
+    if (!moved) return;
+    event.preventDefault();
+    this.suppressReleaseClick();
+    if (!target || target === drag.application.status) {
+      this.boardMessage = 'Application stayed in its original stage.';
+      return;
+    }
+    this.moveApplication(drag.application, target);
   }
 
-  endDrag(): void {
-    this.draggedApplicationId = null;
-    this.dropTargetStatus = null;
-    // Browsers often emit a click after a native drag. Do not open the card then.
+  @HostListener('window:blur')
+  @HostListener('document:keydown.escape')
+  cancelDrag(): void {
+    const moved = this.draggedApplicationId !== null;
+    if (moved) this.cancelledPointerId = this.pointerDrag?.pointerId;
+    this.resetDrag();
+    if (moved) {
+      this.suppressReleaseClick();
+      this.boardMessage = 'Move cancelled. Application stayed in its original stage.';
+    }
+  }
+
+  private suppressReleaseClick(): void {
+    // Suppress only the click synthesized by this pointer release, not the next user click.
     this.ignoreNextCardClick = true;
-    setTimeout(() => { this.ignoreNextCardClick = false; }, 250);
+    clearTimeout(this.clickReset);
+    this.clickReset = setTimeout(() => { this.ignoreNextCardClick = false; }, 0);
   }
 
-  allowDrop(event: DragEvent, status: string): void {
-    if (!this.draggedApplicationId) return;
-    event.preventDefault();
-    event.dataTransfer!.dropEffect = 'move';
-    this.dropTargetStatus = status;
-  }
-
-  clearDropTarget(status: string): void {
-    if (this.dropTargetStatus === status) this.dropTargetStatus = null;
-  }
-
-  dropApplication(event: DragEvent, targetStatus: string): void {
-    event.preventDefault();
-    const applicationId = Number(event.dataTransfer?.getData('text/plain')) || this.draggedApplicationId;
-    const application = this.applications.find((item) => item.id === applicationId);
+  private resetDrag(): void {
+    const drag = this.pointerDrag;
+    this.pointerDrag = undefined;
     this.draggedApplicationId = null;
     this.dropTargetStatus = null;
-    if (!application || application.status === targetStatus || this.loadingApplicationId) return;
+    if (this.dragFrame !== undefined) cancelAnimationFrame(this.dragFrame);
+    this.dragFrame = undefined;
+    if (drag?.element.hasPointerCapture(drag.pointerId)) drag.element.releasePointerCapture(drag.pointerId);
+  }
 
+  private moveApplication(application: ApplicationRecord, targetStatus: string): void {
+    if (this.loadingApplicationId || !this.statuses.some(status => status.key === targetStatus)) return;
     const previousStatus = application.status;
     application.status = targetStatus;
     this.loadingApplicationId = application.id;
     this.boardMessage = `Updating ${application.job_detail.title}…`;
-    this.api.updateApplication(application.id, { status: targetStatus }).subscribe({
+    this.api.updateApplication(application.id, { status: targetStatus }).pipe(timeout(15000)).subscribe({
       next: (updated) => {
         Object.assign(application, updated, { artifact_count: application.artifact_count });
         if (this.selected?.id === application.id) this.selected.status = updated.status;
@@ -298,7 +376,8 @@ export class PipelineComponent implements OnInit {
       error: (error) => {
         application.status = previousStatus;
         this.loadingApplicationId = null;
-        this.boardMessage = error?.error?.status?.[0] || error?.error?.detail || 'Could not update the application status. Please try again.';
+        this.boardMessage = error?.name === 'TimeoutError' ? 'Saving took too long. Refresh the board to check the saved stage before retrying.'
+          : error?.error?.status?.[0] || error?.error?.detail || 'Could not update the application status. Please try again.';
       },
     });
   }

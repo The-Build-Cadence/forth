@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from celery import shared_task
+from .usage import metered_task
 
 from .models import AgentRun, Application, ApplicationEvent, CandidateProfile, JobPosting, JobSource, ProfileDocument, ProfileFact, SourceRun
 from .realtime_events import publish_user_event
@@ -8,6 +9,7 @@ from .services import ingest_profile_document, recompute_match
 
 
 @shared_task
+@metered_task(ProfileDocument, 'document_id')
 def ingest_profile_document_task(document_id: int) -> dict:
     document = ProfileDocument.objects.select_related('owner').get(pk=document_id)
     publish_user_event(document.owner_id, 'profile_ingestion_started', {'document_id': document.id})
@@ -28,6 +30,7 @@ def ingest_profile_document_task(document_id: int) -> dict:
 
 
 @shared_task
+@metered_task(JobPosting, 'job_id')
 def recompute_job_match_task(job_id: int) -> dict:
     job = JobPosting.objects.select_related('owner').get(pk=job_id)
     publish_user_event(job.owner_id, 'match_recompute_started', {'job_id': job.id})
@@ -42,6 +45,7 @@ def recompute_job_match_task(job_id: int) -> dict:
 
 
 @shared_task
+@metered_task()
 def recompute_all_matches_task(owner_id: int) -> dict:
     jobs = JobPosting.objects.filter(owner_id=owner_id)
     count = 0
@@ -53,6 +57,7 @@ def recompute_all_matches_task(owner_id: int) -> dict:
 
 
 @shared_task
+@metered_task(JobPosting, 'job_id')
 def regenerate_application_materials_task(job_id: int) -> dict:
     """Create fresh, profile-aware resume and cover-letter versions for a job."""
     from django.utils import timezone
@@ -110,6 +115,7 @@ def regenerate_application_materials_task(job_id: int) -> dict:
 
 
 @shared_task
+@metered_task()
 def refresh_profile_search_task(owner_id: int, force: bool = False) -> dict:
     """Refresh candidate/fact vectors, then re-rank every stored opportunity."""
     from .domain.embeddings import refresh_fact_embedding, refresh_job_embedding, refresh_profile_embedding
@@ -141,7 +147,8 @@ def refresh_profile_search_task(owner_id: int, force: bool = False) -> dict:
 
 
 @shared_task
-def execute_source_run_task(run_id: int) -> dict:
+@metered_task(SourceRun, 'run_id')
+def execute_source_run_task(run_id: int, origin: str = 'background') -> dict:
     from .domain.sourcing import execute_source_run
 
     run = SourceRun.objects.select_related('owner', 'source').get(pk=run_id)
@@ -170,12 +177,13 @@ def refresh_enabled_sources_task() -> dict:
         if source.last_run_at and source.last_run_at > timezone.now() - timedelta(minutes=minutes):
             continue
         run = SourceRun.objects.create(owner=source.owner, source=source)
-        execute_source_run_task.delay(run.id)
+        execute_source_run_task.delay(run.id, origin='scheduled')
         queued += 1
     return {'queued': queued}
 
 
 @shared_task
+@metered_task(AgentRun, 'run_id')
 def execute_agent_run_task(run_id: int) -> dict:
     from .domain.orchestration import execute_agent_run
 

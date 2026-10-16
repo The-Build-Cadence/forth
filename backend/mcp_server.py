@@ -398,7 +398,14 @@ TOOLS: dict[str, tuple[str, dict[str, Any], Callable[[dict[str, Any]], dict[str,
 }
 
 
+def get_usage_summary(arguments):
+    from core.usage import usage_summary
+    return usage_summary(_owner())
+
+
 TOOLS.update({
+    'get_usage_summary': ('Read your recorded OpenAI and Brave request counts and estimated USD costs, including background work. Unknown costs are excluded; historical usage before tracking is unavailable.',
+        {'type': 'object', 'properties': {}}, get_usage_summary),
     'get_opportunity': ('Read the complete posting, requirement-check reasons, match signals, linked applications and effective material instructions.',
         {'type': 'object', 'properties': {'job_id': {'type': 'integer'}}, 'required': ['job_id']}, get_opportunity),
     'list_applications': ('Read your pipeline with status/search filters and offset pagination, including applied dates and follow-up dates.',
@@ -453,7 +460,9 @@ def handle_request(request: dict[str, Any]) -> dict[str, Any] | None:
             payload = _result({'error': 'Tool arguments must be an object.'}, is_error=True)
         else:
             try:
-                payload = _result(TOOLS[name][2](arguments))
+                from core.usage import usage_context
+                with usage_context(_owner(), 'mcp', str(name)):
+                    payload = _result(TOOLS[name][2](arguments))
             except ToolError as exc:
                 payload = _result({'error': str(exc)}, is_error=True)
             except Exception:

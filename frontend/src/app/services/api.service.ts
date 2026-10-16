@@ -3,6 +3,20 @@ import { Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
+export interface UsageTotals {
+  requests: number;
+  cost_usd: string;
+  month_cost_usd: string;
+  month_requests: number;
+  unknown_cost_requests: number;
+  background_requests: number;
+}
+export interface UsageSummary {
+  currency: string;
+  first_request_at: string | null;
+  providers: { openai: UsageTotals; brave: UsageTotals };
+}
+
 export interface Paged<T> {
   count: number;
   next: string | null;
@@ -306,6 +320,10 @@ export interface ApplicationRecord {
 export class ApiService {
   constructor(private http: HttpClient) {}
 
+  usage(): Observable<UsageSummary> {
+    return this.http.get<UsageSummary>(`${environment.apiBaseUrl}/usage/`);
+  }
+
   dashboard(): Observable<any> {
     return this.http.get(`${environment.apiBaseUrl}/dashboard/`);
   }
@@ -491,10 +509,6 @@ export class ApiService {
 
   requestRender(applicationId: number): Observable<ApprovalRequest> {
     return this.http.post<ApprovalRequest>(`${environment.apiBaseUrl}/applications/${applicationId}/request_render/`, {});
-  }
-
-  artifacts(params: Record<string, string> = {}): Observable<Paged<Artifact>> {
-    return this.http.get<Paged<Artifact>>(`${environment.apiBaseUrl}/artifacts/`, { params: new HttpParams({ fromObject: params }) });
   }
 
   downloadArtifact(id: number): Observable<Blob> {

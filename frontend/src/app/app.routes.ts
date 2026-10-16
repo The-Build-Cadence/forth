@@ -6,7 +6,6 @@ import { MatchesComponent } from './pages/matches.component';
 import { ResumeLabComponent } from './pages/resume-lab.component';
 import { PipelineComponent } from './pages/pipeline.component';
 import { SourcesComponent } from './pages/sources.component';
-import { ArtifactsComponent } from './pages/artifacts.component';
 import { ConciergeComponent } from './pages/concierge.component';
 import { authGuard } from './services/auth.guard';
 import { SignupComponent } from './pages/signup.component';
@@ -24,7 +23,7 @@ export const routes: Routes = [
   { path: 'pipeline', component: PipelineComponent, canActivate: [authGuard] },
   { path: 'sources', component: SourcesComponent, canActivate: [authGuard] },
   { path: 'strategy', redirectTo: 'profile', pathMatch: 'full' },
-  { path: 'artifacts', component: ArtifactsComponent, canActivate: [authGuard] },
+  { path: 'artifacts', redirectTo: 'pipeline', pathMatch: 'full' },
   { path: 'settings', redirectTo: 'profile', pathMatch: 'full' },
   { path: '**', redirectTo: 'dashboard' },
 ];

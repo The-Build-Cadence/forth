@@ -29,6 +29,7 @@ import { RealtimeService } from '../services/realtime.service';
             <select [(ngModel)]="scheduleMinutes" name="scheduleMinutes"><option [ngValue]="60">hour</option><option [ngValue]="360">6 hours</option><option [ngValue]="720">12 hours</option><option [ngValue]="1440">day</option></select>
           </label>
           <label>Country code<input [(ngModel)]="braveCountry" name="braveCountry" maxlength="2"></label>
+          <label>Jobs to save per run<input type="number" [(ngModel)]="maxCandidates" name="maxCandidates" min="1" max="20" step="1"><span class="field-hint">Up to 20 matching jobs. Each search query requests Brave’s maximum of 20 results; duplicates and unsuitable roles are still filtered out.</span></label>
           <label>Minimum discovery fit
             <div class="threshold-control"><input type="range" [(ngModel)]="minimumFitScore" name="minimumFitScore" min="20" max="90" step="5"><output>{{ minimumFitScore }}</output></div>
             <span class="field-hint">Requires a matching role, location and work mode. Equivalent titles receive equal credit; embeddings refine the score.</span>
@@ -100,6 +101,7 @@ export class SourcesComponent implements OnInit, AfterViewInit, OnDestroy {
   braveCountry = 'CA';
   braveQueries = '';
   minimumFitScore = 45;
+  maxCandidates = 20;
   message = '';
   saving = false;
   runningSourceIds = new Set<number>();
@@ -154,6 +156,7 @@ export class SourcesComponent implements OnInit, AfterViewInit, OnDestroy {
         this.braveCountry = this.braveSource.config?.country || 'CA';
         this.braveQueries = (this.braveSource.config?.queries || []).join('\n');
         this.minimumFitScore = Number(this.braveSource.config?.min_triage_score || 45);
+        this.maxCandidates = Math.max(1, Math.min(20, Number(this.braveSource.config?.max_candidates || 20)));
       }
     });
     this.api.sourceRuns().subscribe((page) => {
@@ -170,7 +173,8 @@ export class SourcesComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   createBrave(): void {
-    const config = { connector: 'brave', schedule_minutes: this.scheduleMinutes, country: this.braveCountry.trim().toUpperCase(), queries: this.braveQueries.split('\n').map((q) => q.trim()).filter(Boolean), results_per_query: 5, max_candidates: 5, min_triage_score: this.minimumFitScore };
+    if (!Number.isInteger(this.maxCandidates) || this.maxCandidates < 1 || this.maxCandidates > 20) { this.message = 'Choose between 1 and 20 jobs per run.'; return; }
+    const config = { ...this.braveSource?.config, connector: 'brave', schedule_minutes: this.scheduleMinutes, country: this.braveCountry.trim().toUpperCase(), queries: this.braveQueries.split('\n').map((q) => q.trim()).filter(Boolean), results_per_query: 20, max_candidates: this.maxCandidates, min_triage_score: this.minimumFitScore };
     this.saving = true;
     const request = this.braveSource
       ? this.api.updateSource(this.braveSource.id, { config, enabled: true })

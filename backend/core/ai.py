@@ -11,6 +11,8 @@ from typing import Any
 
 from django.conf import settings
 
+from .usage import openai_request
+
 
 _OPENAI_BACKOFF_UNTIL = 0.0
 
@@ -148,7 +150,7 @@ def openai_client():
     return OpenAI(
         api_key=api_key,
         timeout=getattr(settings, 'OPENAI_TIMEOUT_SECONDS', 45),
-        max_retries=getattr(settings, 'OPENAI_MAX_RETRIES', 0),
+        max_retries=0,  # Each metered call is one attempt; no invisible SDK retries.
     )
 
 
@@ -165,7 +167,7 @@ def embed_text_result(text: str) -> EmbeddingResult:
     client = openai_client() if _openai_available() else None
     if client and cleaned:
         try:
-            response = client.embeddings.create(
+            response = openai_request(client.embeddings.create, operation='embedding',
                 model=model,
                 input=cleaned[:12000],
                 dimensions=dimensions,
@@ -201,7 +203,7 @@ def generate_json(system: str, user: str, schema: dict[str, Any] | None = None) 
                 'schema': schema.get('schema', schema),
                 'strict': True,
             }
-        response = client.responses.create(
+        response = openai_request(client.responses.create, operation='text_generation',
             model=getattr(settings, 'OPENAI_TEXT_MODEL', 'gpt-4.1-mini'),
             input=[
                 {'role': 'system', 'content': system},

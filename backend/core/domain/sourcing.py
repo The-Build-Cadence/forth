@@ -68,6 +68,7 @@ class SourceConnector:
 class BraveSearchConnector(SourceConnector):
     """Discover public job pages using Brave; the secret stays on the server."""
 
+    RESULTS_PER_PAGE = 20  # Brave Web Search API maximum; one request per query.
     endpoint = 'https://api.search.brave.com/res/v1/web/search'
     ATS_DOMAINS = ('job-boards.greenhouse.io', 'boards.greenhouse.io', 'jobs.lever.co', 'jobs.ashbyhq.com', 'jobs.smartrecruiters.com', 'myworkdayjobs.com', 'apply.workable.com')
     REJECTED_DOMAINS = ('indeed.', 'linkedin.', 'glassdoor.', 'ziprecruiter.', 'talent.com', 'jooble.', 'simplyhired.', 'careerbuilder.', 'jobgether.', 'builtin.com', 'remoterocketship.com', 'randstad.', 'turing.com')
@@ -213,7 +214,7 @@ class BraveSearchConnector(SourceConnector):
             self.emit_progress({'level': 'notice', 'message': 'No untried searches are due. Add target roles or focused queries, or wait for the query cooldown.'})
             return []
         country = clean_text(self.config.get('country') or 'CA').upper()[:2]
-        count = max(1, min(10, int(self.config.get('results_per_query') or 5)))
+        count = max(1, min(self.RESULTS_PER_PAGE, int(self.config.get('results_per_query') or self.RESULTS_PER_PAGE)))
         records: list[SourceRecord] = []
         self.events = []
         self.query_plans = []
@@ -221,8 +222,9 @@ class BraveSearchConnector(SourceConnector):
         for plan in plans:
             query = plan['query']
             self.emit_progress({'level': 'searching', 'message': f'Searching: {query}', 'query': query})
-            response = requests.get(
-                self.endpoint,
+            from core.usage import brave_request
+            response = brave_request(requests.get, owner=self.source.owner,
+                url=self.endpoint,
                 params={'q': query, 'count': count, 'country': country, 'search_lang': 'en',
                         **({'freshness': plan['components']['freshness']} if plan['components'].get('freshness') else {})},
                 headers={'Accept': 'application/json', 'X-Subscription-Token': key}, timeout=self.timeout,
@@ -667,15 +669,20 @@ def _triage_records(source: JobSource, records: list[SourceRecord]) -> list[Sour
     profile = refresh_profile_embedding(source.owner)
     profile_evidence = profile_embedding_text(source.owner)
     threshold = max(1, min(99, int((source.config or {}).get('min_triage_score') or 45)))
+    limit = max(1, min(20, int((source.config or {}).get('max_candidates') or 20)))
+    # Cover every result from the maximum ten queries, with room to verify
+    # alternatives that may fail checks on the actual employer page.
+    evaluation_limit = 10 * BraveSearchConnector.RESULTS_PER_PAGE
+    verification_limit = max(12, limit * 2)
     existing_urls = set(JobPosting.objects.filter(owner=source.owner).values_list('source_url', flat=True))
     ranked: list[tuple[float, SourceRecord]] = []
     pages_verified = 0
     verified_urls = set()
     for index, record in enumerate(records):
         assessment = cheap_assessment(profile, record, profile_evidence=profile_evidence)
-        if index < 80 and assessment['reason_code'] in {'qualified', 'insufficient_evidence', 'discipline_unverified', 'location_unverified', 'remote_unverified'}:
-            if pages_verified >= 12:
-                assessment.update(eligible=False, reason_code='verification_limit', reason='The 12-page verification budget was reached.')
+        if index < evaluation_limit and assessment['reason_code'] in {'qualified', 'insufficient_evidence', 'discipline_unverified', 'location_unverified', 'remote_unverified'}:
+            if pages_verified >= verification_limit:
+                assessment.update(eligible=False, reason_code='verification_limit', reason=f'The {verification_limit}-page verification budget was reached.')
             else:
                 pages_verified += 1
                 problem = _verify_job_page(record)
@@ -685,8 +692,8 @@ def _triage_records(source: JobSource, records: list[SourceRecord]) -> list[Sour
                     assessment = cheap_assessment(profile, record, profile_evidence=profile_evidence)
         record.payload = {**(record.payload or {}), 'triage': {**assessment, 'threshold': threshold}}
         triage = record.payload['triage']
-        if index >= 80:
-            triage.update(eligible=False, reason_code='evaluation_limit', reason='The 80-page evaluation budget was reached.')
+        if index >= evaluation_limit:
+            triage.update(eligible=False, reason_code='evaluation_limit', reason=f'The {evaluation_limit}-page evaluation budget was reached.')
         if not triage['eligible']:
             continue
         if record.source_url in verified_urls:
@@ -709,7 +716,6 @@ def _triage_records(source: JobSource, records: list[SourceRecord]) -> list[Sour
             continue
         ranked.append((score, record))
     ranked.sort(key=lambda item: (item[1].payload['triage']['existing'], -item[0], item[1].title.lower()))
-    limit = max(1, min(8, int((source.config or {}).get('max_candidates') or 5)))
     for _, record in ranked[limit:]:
         record.payload['triage'].update(eligible=False, reason_code='run_limit', reason=f'Qualified, but outside this run’s {limit}-job import budget; new opportunities are prioritized.')
     return [record for _, record in ranked[:limit]]
