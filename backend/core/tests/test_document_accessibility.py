@@ -48,7 +48,7 @@ class DocumentAccessibilityTests(SimpleTestCase):
         rendered = document_html('Alex & Resume', SAMPLE, kind='resume')
         self.assertIn('<html lang="en-us">', rendered)
         self.assertIn('<title>Alex &amp; Resume</title>', rendered)
-        self.assertIn('<main><h1>Alex Example</h1>', rendered)
+        self.assertIn('<main><header><h1>Alex Example</h1>', rendered)
         self.assertIn('<h2>Qualifications Summary</h2>', rendered)
         self.assertIn('<h3>Software Engineer</h3>', rendered)
         self.assertIn('<ul>\n<li>Python delivery:', rendered)
@@ -71,7 +71,11 @@ class DocumentAccessibilityTests(SimpleTestCase):
     @patch('core.domain.documents._store_artifact', side_effect=lambda **kwargs: kwargs)
     @patch('core.domain.documents.requests.post')
     def test_pdf_export_requests_structure_and_outline(self, post, store):
-        post.return_value = Mock(content=b'%PDF-example')
+        from io import BytesIO
+        from pypdf import PdfWriter
+        writer = PdfWriter(); writer.add_blank_page(width=612, height=792)
+        buffer = BytesIO(); writer.write(buffer)
+        post.return_value = Mock(content=buffer.getvalue())
         artifact = render_pdf(owner=None, title='Example', markdown=SAMPLE, kind='cover_letter')
         self.assertEqual(post.call_args.kwargs['data']['generateTaggedPdf'], 'true')
         self.assertEqual(post.call_args.kwargs['data']['generateDocumentOutline'], 'true')
@@ -84,7 +88,7 @@ class DocumentAccessibilityTests(SimpleTestCase):
     def test_html_fallback_preserves_semantics(self, post, store):
         artifact = render_pdf(owner=None, title='Example', markdown=SAMPLE, kind='resume')
         self.assertEqual(artifact['kind'], 'resume_html')
-        self.assertIn(b'<main><h1>Alex Example</h1>', artifact['content'])
+        self.assertIn(b'<main><header><h1>Alex Example</h1>', artifact['content'])
         self.assertIn(b'Employer: Example Labs', artifact['content'])
 
     @patch('core.ai.generate_json', return_value=None)

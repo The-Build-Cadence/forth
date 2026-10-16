@@ -508,26 +508,37 @@ def connector_for(source: JobSource) -> SourceConnector:
 
 
 def persist_job_structure(job: JobPosting, *, source_payload: dict | None = None) -> JobPostingVersion:
+    from .job_skills import ensure_job_skills
+    enriched = ensure_job_skills(job.extracted_json, job.description_text)
+    if enriched != job.extracted_json:
+        job.extracted_json = enriched
+        job.save(update_fields=['extracted_json', 'updated_at'])
     content_hash = stable_hash(job.description_text)
     current = job.versions.filter(content_hash=content_hash).first()
-    if current:
+    if current and job.requirements.filter(category='skill').exists():
         job.last_seen_at = timezone.now()
         job.freshness_status = 'fresh'
         job.save(update_fields=['last_seen_at', 'freshness_status', 'updated_at'])
         return current
     job.versions.filter(is_current=True).update(is_current=False)
-    version_number = (job.versions.aggregate(value=Max('version'))['value'] or 0) + 1
-    version = JobPostingVersion.objects.create(
-        owner=job.owner,
-        job=job,
-        version=version_number,
-        content_hash=content_hash,
-        description_text=job.description_text,
-        extracted_json=job.extracted_json,
-        source_payload=source_payload or {},
-        fetched_at=timezone.now(),
-        is_current=True,
-    )
+    if current:
+        version = current
+        version.extracted_json = job.extracted_json
+        version.is_current = True
+        version.save(update_fields=['extracted_json', 'is_current'])
+    else:
+        version_number = (job.versions.aggregate(value=Max('version'))['value'] or 0) + 1
+        version = JobPostingVersion.objects.create(
+            owner=job.owner,
+            job=job,
+            version=version_number,
+            content_hash=content_hash,
+            description_text=job.description_text,
+            extracted_json=job.extracted_json,
+            source_payload=source_payload or {},
+            fetched_at=timezone.now(),
+            is_current=True,
+        )
     extracted = job.extracted_json or {}
     JobRequirement.objects.filter(job=job).delete()
     groups = [
@@ -541,7 +552,9 @@ def persist_job_structure(job: JobPosting, *, source_payload: dict | None = None
             if text:
                 JobRequirement.objects.create(
                     owner=job.owner, job=job, kind=kind, category=category,
-                    text=text, normalized_value=text.lower()[:220], is_hard=is_hard, weight=weight,
+                    text=text, normalized_value=text.lower()[:220],
+                    is_hard=is_hard and text not in extracted.get('inferred_skills', []), weight=weight,
+                    metadata={'inferred': text in extracted.get('inferred_skills', []), 'source': extracted.get('skill_inference_source', 'extraction')},
                 )
     return version
 

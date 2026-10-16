@@ -92,7 +92,7 @@ def _normalized_requirements(job: JobPosting) -> list[dict[str, Any]]:
         )
         # A short, atomic extracted value still has value even when it is not
         # in the local technology vocabulary.
-        if not names and len(keywords(text, limit=8)) <= 3:
+        if not names and text.strip():
             names.append((requirement.normalized_value or text).lower())
         for name in dict.fromkeys(names):
             existing = requirements.get(name)
@@ -100,6 +100,7 @@ def _normalized_requirements(job: JobPosting) -> list[dict[str, Any]]:
                 'name': name,
                 'required': requirement.kind == 'required' or requirement.is_hard,
                 'source_text': text,
+                'inferred': bool(requirement.metadata.get('inferred')),
             }
             if existing:
                 existing['required'] = existing['required'] or candidate['required']
@@ -187,6 +188,9 @@ def _signal(kind: str, label: str, score: int, explanation: str, evidence: list[
 
 @transaction.atomic
 def recompute_match(job: JobPosting) -> JobMatch:
+    if not job.requirements.filter(category='skill').exists():
+        from .sourcing import persist_job_structure
+        persist_job_structure(job)
     context = profile_context(job.owner)
     profile = refresh_profile_embedding(job.owner)
     job = refresh_job_embedding(job)
@@ -322,7 +326,8 @@ def recompute_match(job: JobPosting) -> JobMatch:
             'Required and preferred capabilities',
             skill_score,
             f'{sum(item["name"] in covered for item in required_requirements)} of {len(required_requirements)} required and '
-            f'{sum(item["name"] in covered for item in preferred_requirements)} of {len(preferred_requirements)} preferred capabilities are supported.',
+            f'{sum(item["name"] in covered for item in preferred_requirements)} of {len(preferred_requirements)} preferred capabilities are supported.'
+            + (f' {sum(bool(item.get("inferred")) for item in requirements)} capabilities are inferred from duties, not explicitly stated by the employer.' if any(item.get('inferred') for item in requirements) else ''),
             covered,
         ),
         _signal('evidence', 'Experience evidence', evidence_score, f'{len(direct_evidence)} facts directly support role capabilities; {len(verified_direct_evidence)} are verified.', supporting[:12]),

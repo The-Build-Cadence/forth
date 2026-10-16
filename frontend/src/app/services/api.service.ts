@@ -494,6 +494,11 @@ export class ApiService {
     return this.http.get(`${environment.apiBaseUrl}/resumes/${id}/export_markdown/`, { responseType: 'blob' });
   }
 
+  resumeDesign(id: number, payload?: any): Observable<any> {
+    const url = `${environment.apiBaseUrl}/resumes/${id}/design/`;
+    return payload ? this.http.post(url, payload) : this.http.get(url);
+  }
+
   exportResumePdf(id: number): Observable<Blob> {
     return this.http.post(`${environment.apiBaseUrl}/resumes/${id}/export_pdf/`, {}, { responseType: 'blob' });
   }

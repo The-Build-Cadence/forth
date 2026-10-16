@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import base64
+from functools import lru_cache
+from io import BytesIO
+
 import hashlib
 import html
 import re
@@ -68,18 +72,30 @@ def _markdown_to_html(markdown: str) -> str:
     return '\n'.join(lines)
 
 
-def _document_design(design: dict[str, Any] | None, *, kind: str) -> dict[str, str]:
-    supplied = design if isinstance(design, dict) else {}
-    accent = clean_text(supplied.get('accent'))
-    if not re.fullmatch(r'#[0-9a-fA-F]{6}', accent):
-        accent = '#177d69' if kind == 'resume' else '#7558d8'
-    template = supplied.get('template') if supplied.get('template') in {'modern', 'classic', 'minimal'} else 'modern'
-    density = supplied.get('density') if supplied.get('density') in {'compact', 'balanced', 'spacious'} else 'balanced'
-    page_size = supplied.get('page_size') if supplied.get('page_size') in {'Letter', 'A4'} else 'Letter'
-    return {'accent': accent, 'template': template, 'density': density, 'page_size': page_size}
+def _document_design(design: dict[str, Any] | None, *, kind: str) -> dict[str, Any]:
+    from .material_preferences import normalize_design
+    selected = normalize_design(design)
+    if kind != 'resume':
+        selected['layout'] = 'single'
+        selected['max_pages'] = 0
+    return selected
+
+
+@lru_cache(maxsize=3)
+def _font_css(font: str) -> str:
+    family = {'sans': 'LiberationSans', 'humanist': 'Carlito', 'serif': 'LiberationSerif'}[font]
+    rules = []
+    for face, weight in [('Regular', 400), ('Bold', 700)]:
+        data = (Path(__file__).resolve().parent.parent / 'assets' / 'fonts' / f'{family}-{face}.ttf').read_bytes()
+        encoded = base64.b64encode(data).decode('ascii')
+        rules.append(f"@font-face {{ font-family: ForthDocument; font-weight: {weight}; src: url(data:font/ttf;base64,{encoded}) format('truetype'); }}")
+    return '\n'.join(rules)
 
 
 def document_html(title: str, markdown: str, *, kind: str, design: dict[str, Any] | None = None) -> str:
+    if kind == 'resume':
+        from .resume_contacts import without_design_notes
+        markdown = without_design_notes(markdown)
     selected = _document_design(design, kind=kind)
     accent = selected['accent']
     density = {
@@ -98,8 +114,15 @@ h2 {{ color: #17231f; border-bottom: 1.5px solid {accent}; text-align: center; t
 h1 {{ text-align: left; font-weight: 600; letter-spacing: -1px; }}
 h2 {{ color: #17231f; border-left: 3px solid {accent}; padding-left: 8px; text-transform: none; letter-spacing: 0; }}''',
     }[selected['template']]
+    header, separator, sections = re.split(r'(?m)^(## )', markdown, maxsplit=1) if re.search(r'(?m)^## ', markdown) else (markdown, '', '')
+    section_html = _markdown_to_html(separator + sections)
+    # Keep a role/qualification heading with its own evidence where it fits.
+    section_html = re.sub(r'(<h3>.*?)(?=<h[23]>|\Z)', r'<div class="resume-entry">\1</div>', section_html, flags=re.S)
+    body = f'<header>{_markdown_to_html(header)}</header><div class="resume-sections">{section_html}</div>'
+    columns = 'column-count: 2; column-gap: .3in; column-rule: 1px solid #e0e5e9;' if selected['layout'] == 'two_column' else ''
     return f'''<!doctype html>
 <html lang="{html.escape(settings.LANGUAGE_CODE, quote=True)}"><head><meta charset="utf-8"><title>{html.escape(title)}</title><style>
+{_font_css(selected['font'])}
 @page {{ size: {selected['page_size']}; margin: {density['margin']}; }}
 * {{ box-sizing: border-box; }}
 body {{ margin: 0; color: #17231f; font-size: {density['font']}; line-height: {density['line']}; }}
@@ -113,7 +136,14 @@ li {{ margin-bottom: 4px; break-inside: avoid; }}
 a {{ color: {accent}; overflow-wrap: anywhere; }}
 hr {{ margin: 8px 0; border: 0; border-top: 1px solid #d7dfdc; }}
 {template_css}
-</style></head><body><main>{_markdown_to_html(markdown)}</main></body></html>'''
+body {{ font-family: ForthDocument, sans-serif; }}
+header {{ border-top: 4px solid {accent}; padding-top: 12px; margin-bottom: 16px; }}
+h1 {{ color: {accent}; }}
+.resume-sections {{ {columns} }}
+.resume-sections > :first-child {{ margin-top: 0; }}
+.resume-entry {{ break-inside: avoid; }}
+@media screen {{ body {{ padding: {density['margin']}; max-width: {'8.5in' if selected['page_size'] == 'Letter' else '210mm'}; margin: auto; }} }}
+</style></head><body><main>{body}</main></body></html>'''
 
 
 def _cover_letter_result(job: JobPosting, facts: list[ProfileFact], instructions: str = '') -> dict[str, Any]:
@@ -261,6 +291,9 @@ def _store_artifact(*, owner, title: str, kind: str, content: bytes, filename: s
 
 
 def render_pdf(*, owner, title: str, markdown: str, kind: str, application=None, resume=None, cover_letter=None, design=None) -> Artifact:
+    if resume is not None:
+        from .resume_contacts import resume_presentation_text
+        markdown = resume_presentation_text(resume)
     rendered_html = document_html(title, markdown, kind=kind, design=design)
     slug = re.sub(r'[^a-z0-9]+', '-', title.lower()).strip('-')[:80] or kind
     gotenberg_url = getattr(settings, 'GOTENBERG_URL', '').rstrip('/')
@@ -276,10 +309,19 @@ def render_pdf(*, owner, title: str, markdown: str, kind: str, application=None,
                 timeout=int(getattr(settings, 'GOTENBERG_TIMEOUT_SECONDS', 45)),
             )
             response.raise_for_status()
+            from pypdf import PdfReader
+            pages = len(PdfReader(BytesIO(response.content)).pages)
+            limit = _document_design(design, kind=kind)['max_pages']
+            if limit and pages > limit:
+                if _document_design(design, kind=kind)['density'] != 'compact':
+                    return render_pdf(owner=owner, title=title, markdown=markdown, kind=kind,
+                                      application=application, resume=resume, cover_letter=cover_letter,
+                                      design={**(design or {}), 'density': 'compact'})
+                raise ValueError(f'This resume needs {pages} pages, above your {limit}-page limit even with compact spacing. Shorten the content, choose two columns, or increase the page limit. No content was cut off.')
             return _store_artifact(
                 owner=owner, title=title, kind=f'{kind}_pdf', content=response.content,
                 filename=f'{slug}.pdf', mime_type='application/pdf', application=application,
-                resume=resume, cover_letter=cover_letter, metadata={'renderer': 'gotenberg'},
+                resume=resume, cover_letter=cover_letter, metadata={'renderer': 'gotenberg', 'page_count': pages, 'design': _document_design(design, kind=kind)},
             )
         except requests.RequestException as exc:
             render_error = str(exc)[:500]

@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit, ViewEncapsulation } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
+import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
 import { ApiService, CoverLetter, JobPosting, Resume, ResumeContact } from '../services/api.service';
 
@@ -10,6 +11,9 @@ interface ResumeDesign {
   accent: string;
   page_size: 'Letter' | 'A4';
   rationale: string;
+  layout: 'single' | 'two_column';
+  font: 'sans' | 'humanist' | 'serif';
+  max_pages: number;
 }
 
 @Component({
@@ -114,20 +118,30 @@ interface ResumeDesign {
             </div>
             <div class="result-actions">
               <button class="btn-secondary" type="button" *ngIf="selected.target_job" (click)="regenerate(selected)" [disabled]="generating"><span class="spinner" *ngIf="generating" aria-hidden="true"></span>{{ generating ? 'Regenerating…' : '↻ Regenerate' }}</button>
-              <button class="btn-primary" type="button" (click)="downloadPdf(selected)" [disabled]="exportingPdfId === selected.id"><span class="spinner" *ngIf="exportingPdfId === selected.id" aria-hidden="true"></span>{{ exportingPdfId === selected.id ? 'Rendering PDF…' : '↓ Download PDF' }}</button>
+              <button class="btn-primary" type="button" (click)="downloadPdf(selected)" [disabled]="exportingPdfId === selected.id || designDirty || designLoading"><span class="spinner" *ngIf="exportingPdfId === selected.id" aria-hidden="true"></span>{{ exportingPdfId === selected.id ? 'Rendering PDF…' : '↓ Download PDF' }}</button>
             </div>
           </section>
 
-          <section class="design-direction" [style.--document-accent]="design(selected).accent">
-            <div class="design-swatch"><i></i><i></i><i></i></div>
-            <div><span>Design direction</span><strong>{{ design(selected).template }} · {{ design(selected).density }} · {{ design(selected).page_size }}</strong><p>{{ design(selected).rationale }}</p></div>
-            <div class="ats-badge"><span>✓</span><strong>ATS-safe</strong><small>Single-column structure</small></div>
-          </section>
-
-          <section class="document-stage">
-            <div class="page-shadow">
-              <article class="resume-paper" [class.template-classic]="design(selected).template === 'classic'" [class.template-minimal]="design(selected).template === 'minimal'" [class.density-compact]="design(selected).density === 'compact'" [class.density-spacious]="design(selected).density === 'spacious'" [style.--document-accent]="design(selected).accent" [innerHTML]="renderMarkdown(selected.content_markdown)"></article>
+          <section class="resume-designer" *ngIf="designDraft">
+            <div class="panel-head"><div><h3>Resume designer</h3><p>Adjust this version without rewriting your experience. The preview uses the PDF renderer’s design and embedded fonts.</p></div></div>
+            <div class="designer-controls">
+              <label>Style<select [(ngModel)]="designDraft.template" (ngModelChange)="previewDesign()"><option value="modern">Modern</option><option value="minimal">Minimal</option><option value="classic">Classic</option></select></label>
+              <label>Layout<select [(ngModel)]="designDraft.layout" (ngModelChange)="previewDesign()"><option value="single">Single column</option><option value="two_column">Balanced two columns</option></select></label>
+              <label>Font<select [(ngModel)]="designDraft.font" (ngModelChange)="previewDesign()"><option value="sans">Clean sans · Helvetica-style</option><option value="humanist">Humanist sans · Calibri-style</option><option value="serif">Classic serif</option></select></label>
+              <label>Spacing<select [(ngModel)]="designDraft.density" (ngModelChange)="previewDesign()"><option value="compact">Compact</option><option value="balanced">Balanced</option><option value="spacious">Spacious</option></select></label>
+              <label>Accent color<input type="color" [(ngModel)]="designDraft.accent" (change)="previewDesign()"></label>
+              <label>Paper<select [(ngModel)]="designDraft.page_size" (ngModelChange)="previewDesign()"><option value="Letter">Letter</option><option value="A4">A4</option></select></label>
+              <label>Page limit<select [(ngModel)]="designDraft.max_pages" (ngModelChange)="previewDesign()"><option [ngValue]="0">Automatic</option><option [ngValue]="1">One page</option><option [ngValue]="2">Two pages</option><option [ngValue]="3">Three pages</option></select></label>
             </div>
+            <p class="field-hint">Fonts are embedded for consistent downloads: Liberation Sans, Carlito, or Liberation Serif. Two columns keep selectable text; some application parsers work best with a single column.</p>
+            <p class="field-hint">The preview shows continuous content. PDF export checks the page limit and may use compact spacing to fit. If it still exceeds the limit, Forth asks you to shorten it instead of cutting off content.</p>
+            <div class="action-row"><button type="button" class="btn-secondary" (click)="previewDesign(true)" [disabled]="designLoading">Apply saved style instructions</button><button type="button" class="btn-primary" (click)="saveDesign()" [disabled]="!designDirty || designLoading">{{ designLoading ? 'Updating preview…' : 'Save design' }}</button></div>
+            <p class="field-hint">Saved style instructions use this opportunity’s override, or your Settings defaults. Writing and emphasis changes require Regenerate. Save this design before downloading.</p>
+          </section>
+          <p class="field-hint" role="status" *ngIf="designLoading">Loading design preview…</p>
+          <p role="alert" *ngIf="designError">{{ designError }} <button type="button" class="btn-secondary" (click)="loadDesign()">Retry preview</button></p>
+          <section class="document-stage" *ngIf="designPreview">
+            <iframe class="designed-resume-preview" title="Designed resume preview" sandbox="" [srcdoc]="designPreview"></iframe>
           </section>
 
           <section class="resume-review-grid">
@@ -193,7 +207,7 @@ export class ResumeLabComponent implements OnInit {
   savingContact = false;
   contactError = '';
 
-  constructor(private api: ApiService, private route: ActivatedRoute) {}
+  constructor(private api: ApiService, private route: ActivatedRoute, private sanitizer: DomSanitizer) {}
 
   ngOnInit(): void {
     const job = Number(this.route.snapshot.queryParamMap.get('job'));
@@ -245,11 +259,12 @@ export class ResumeLabComponent implements OnInit {
     this.api.resumes({ ...params, kind: 'tailored' }).subscribe((page) => {
       this.resumes = page.results;
       this.selected = !letterId ? this.resumes.find(resume => resume.id === resumeId) || this.resumes[0] : undefined;
+      if (this.selected) this.loadDesign();
     });
     this.api.coverLetters(params).subscribe((page) => {
       this.coverLetters = page.results;
       this.selectedLetter = this.coverLetters.find(letter => letter.id === letterId);
-      if (letterId && !this.selectedLetter) this.selected = this.resumes[0];
+      if (letterId && !this.selectedLetter && this.resumes[0]) this.selectResume(this.resumes[0]);
     });
   }
 
@@ -269,7 +284,7 @@ export class ResumeLabComponent implements OnInit {
     }, error: () => this.message = 'Download failed. Please try again.' });
   }
 
-  selectResume(resume: Resume): void { this.selected = resume; this.selectedLetter = undefined; this.acceptResumeRisk = false; }
+  selectResume(resume: Resume): void { this.selected = resume; this.loadDesign(); this.selectedLetter = undefined; this.acceptResumeRisk = false; }
   selectLetter(letter: CoverLetter): void { this.selectedLetter = letter; this.selected = undefined; this.acceptLetterRisk = false; }
 
   createCanonical(): void {
@@ -294,7 +309,7 @@ export class ResumeLabComponent implements OnInit {
       next: (resume) => {
         this.libraryJobId = jobId;
         this.message = 'Your new resume is ready for review.';
-        this.selected = resume;
+        this.selectResume(resume);
         this.selectedLetter = undefined;
         this.activeTab = 'library';
         this.generating = false;
@@ -325,12 +340,56 @@ export class ResumeLabComponent implements OnInit {
     this.message = 'Rendering the designed PDF…';
     this.api.exportResumePdf(resume.id).subscribe({
       next: (blob) => { this.saveBlob(blob, `${this.slug(resume.title)}.${blob.type.includes('html') ? 'html' : 'pdf'}`); this.exportingPdfId = null; this.message = blob.type.includes('html') ? 'PDF renderer unavailable. Downloaded an HTML preview.' : 'Designed PDF downloaded.'; },
-      error: () => { this.exportingPdfId = null; this.message = 'The PDF could not be rendered. Please try again.'; },
+      error: async error => { this.exportingPdfId = null; let detail = error?.error?.detail; if (error.error instanceof Blob) { try { detail = JSON.parse(await error.error.text()).detail; } catch {} } this.message = detail || 'The PDF could not be rendered. Please try again.'; },
     });
   }
 
   downloadSource(resume: Resume): void {
     this.api.exportResumeMarkdown(resume.id).subscribe((blob) => this.saveBlob(blob, `${this.slug(resume.title)}.md`));
+  }
+
+  designDraft?: ResumeDesign;
+  designPreview?: SafeHtml;
+  designDirty = false;
+  designLoading = false;
+  designError = '';
+  private designRequest = 0;
+
+  loadDesign(): void {
+    if (!this.selected) return;
+    this.designDraft = this.design(this.selected);
+    this.designPreview = undefined;
+    this.designDirty = false;
+    this.requestDesign();
+  }
+  previewDesign(useInstructions = false): void {
+    this.designDirty = true;
+    this.requestDesign({design: this.designDraft, use_saved_instructions: useInstructions});
+  }
+  saveDesign(): void { this.requestDesign({design: this.designDraft, save: true}); }
+  private requestDesign(payload?: any): void {
+    if (!this.selected) return;
+    const id = this.selected.id, request = ++this.designRequest;
+    this.designLoading = true;
+    this.designError = '';
+    this.api.resumeDesign(id, payload).subscribe({next: result => {
+      if (request !== this.designRequest || this.selected?.id !== id) return;
+      this.designDraft = result.design;
+      // Only our escaped Markdown + validated design renderer supplies this HTML.
+      // The iframe sandbox prevents scripts and top-level navigation.
+      this.designPreview = this.sanitizer.bypassSecurityTrustHtml(result.html);
+      this.designLoading = false;
+      if (payload?.save) {
+        this.selected = result.resume;
+        this.resumes = this.resumes.map(resume => resume.id === id ? result.resume : resume);
+        this.designDirty = false;
+        this.message = 'Design saved. Your next PDF uses these settings. Review before approving.';
+      }
+    }, error: error => {
+      if (request !== this.designRequest || this.selected?.id !== id) return;
+      this.designLoading = false;
+      this.designError = error?.error?.detail || 'Could not update the design preview.';
+    }});
   }
 
   design(resume: Resume | CoverLetter): ResumeDesign {
@@ -340,6 +399,9 @@ export class ResumeLabComponent implements OnInit {
       density: ['compact', 'balanced', 'spacious'].includes(supplied.density) ? supplied.density : 'balanced',
       accent: /^#[0-9a-f]{6}$/i.test(supplied.accent || '') ? supplied.accent : '#177d69',
       page_size: supplied.page_size === 'A4' ? 'A4' : 'Letter',
+      layout: supplied.layout === 'two_column' ? 'two_column' : 'single',
+      font: ['sans', 'humanist', 'serif'].includes(supplied.font) ? supplied.font : supplied.template === 'classic' ? 'serif' : 'sans',
+      max_pages: [1, 2, 3].includes(supplied.max_pages) ? supplied.max_pages : 0,
       rationale: supplied.rationale || 'A restrained, ATS-safe layout that keeps your strongest evidence easy to scan.',
     };
   }

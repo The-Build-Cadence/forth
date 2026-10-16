@@ -585,6 +585,41 @@ class ResumeViewSet(OwnedViewSet):
         publish_user_event(request.user.id, 'resume_tailoring_finished', {'resume_id': resume.id, 'job_id': resume.target_job_id})
         return Response(self.get_serializer(resume).data, status=status.HTTP_201_CREATED)
 
+    @action(detail=True, methods=['get', 'post'])
+    def design(self, request, pk=None):
+        from .domain.documents import document_html
+        from .domain.resume_contacts import resume_presentation_text
+        from .domain.material_preferences import DESIGN_CHOICES, instruction_design, material_instructions, normalize_design
+        import re
+
+        resume = self.get_object()
+        current = (resume.content_json or {}).get('design', {})
+        selected = normalize_design(current)
+        if request.method == 'POST':
+            supplied = request.data.get('design', {})
+            if not isinstance(supplied, dict) or any(key not in {*DESIGN_CHOICES, 'accent', 'max_pages', 'rationale'} for key in supplied):
+                return Response({'detail': 'Invalid design settings.'}, status=400)
+            for key, choices in DESIGN_CHOICES.items():
+                if key in supplied and supplied[key] not in choices:
+                    return Response({'detail': f'Unsupported {key} choice.'}, status=400)
+            if 'accent' in supplied and not re.fullmatch(r'#[0-9a-fA-F]{6}', str(supplied['accent'])):
+                return Response({'detail': 'Use a six-digit hex accent color.'}, status=400)
+            if 'max_pages' in supplied and (type(supplied['max_pages']) is not int or supplied['max_pages'] not in (0, 1, 2, 3)):
+                return Response({'detail': 'Choose an automatic length or a one, two, or three-page limit.'}, status=400)
+            selected = normalize_design({**selected, **supplied})
+            if request.data.get('use_saved_instructions') is True:
+                selected = instruction_design(selected, material_instructions(request.user, resume.target_job))
+            if request.data.get('save') is True:
+                from django.db import transaction
+                with transaction.atomic():
+                    resume = Resume.objects.select_for_update().get(pk=resume.pk, owner=request.user)
+                    resume.content_json = {**(resume.content_json or {}), 'design': selected}
+                    resume.approved = False
+                    resume.save(update_fields=['content_json', 'approved', 'updated_at'])
+        return Response({'design': selected,
+                         'html': document_html(resume.title, resume_presentation_text(resume), kind='resume', design=selected),
+                         'resume': self.get_serializer(resume).data})
+
     @action(detail=True, methods=['post'])
     def approve(self, request, pk=None):
         resume = self.get_object()
@@ -598,7 +633,8 @@ class ResumeViewSet(OwnedViewSet):
     @action(detail=True, methods=['get'])
     def export_markdown(self, request, pk=None):
         resume = self.get_object()
-        response = HttpResponse(resume.content_markdown, content_type='text/markdown')
+        from .domain.resume_contacts import resume_presentation_text
+        response = HttpResponse(resume_presentation_text(resume), content_type='text/markdown')
         filename = f'{resume.title.lower().replace(" ", "-")}.md'
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
@@ -606,14 +642,17 @@ class ResumeViewSet(OwnedViewSet):
     @action(detail=True, methods=['post'])
     def export_pdf(self, request, pk=None):
         resume = self.get_object()
-        artifact = render_pdf(
-            owner=request.user,
-            title=resume.title,
-            markdown=resume.content_markdown,
-            kind='resume',
-            resume=resume,
-            design=(resume.content_json or {}).get('design'),
-        )
+        try:
+            artifact = render_pdf(
+                owner=request.user,
+                title=resume.title,
+                markdown=resume.content_markdown,
+                kind='resume',
+                resume=resume,
+                design=(resume.content_json or {}).get('design'),
+            )
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
         artifact.file.open('rb')
         filename = Path(artifact.file.name).name
         return FileResponse(artifact.file, as_attachment=True, filename=filename, content_type=artifact.mime_type)

@@ -400,8 +400,9 @@ def create_tailored_resume(owner, *, job: JobPosting, canonical: Resume | None =
     from .domain.material_preferences import material_instructions, instruction_design
     instructions = material_instructions(owner, job)
     contact = getattr(profile, 'resume_contact', {}) or {}
-    candidate_name = owner.get_full_name() or owner.get_username().replace('.', ' ').replace('_', ' ').title()
+    candidate_name = owner.get_full_name() or owner.get_username().split('@')[0].replace('.', ' ').replace('_', ' ').title()
     source_markdown = without_resume_contacts(canonical.content_markdown) if contact else canonical.content_markdown
+    from .domain.resume_contacts import without_design_notes
     result = tailor_resume(
         canonical_markdown=source_markdown,
         job_title=job.title,
@@ -433,7 +434,7 @@ def create_tailored_resume(owner, *, job: JobPosting, canonical: Resume | None =
         kind='tailored',
         title=clean_text(result.data.get('title'))[:220] or f'{job.title} Tailored Resume',
         content_markdown=apply_resume_contacts(
-            result.data.get('content_markdown', source_markdown), contact, candidate_name=candidate_name,
+            without_design_notes(result.data.get('content_markdown', source_markdown)), contact, candidate_name=candidate_name,
         ),
         content_json={
             'target_job_id': job.id,
@@ -445,7 +446,7 @@ def create_tailored_resume(owner, *, job: JobPosting, canonical: Resume | None =
             'design': instruction_design(result.data.get('design') or {
                 'template': 'modern', 'density': 'balanced', 'accent': '#177d69',
                 'page_size': 'Letter', 'rationale': 'A clean, ATS-safe presentation selected for this application.',
-            }, instructions if result.source == 'heuristic' else ''),
+            }, instructions),
         },
         parent_resume=canonical,
         target_job=job,
