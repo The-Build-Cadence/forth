@@ -45,6 +45,7 @@ class CandidateProfile(models.Model):
     location = models.CharField(max_length=220, blank=True)
     # Empty means legacy source contacts are preserved until the user configures them.
     resume_contact = models.JSONField(default=dict, blank=True)
+    generation_instructions = models.TextField(blank=True, max_length=6000)
     authorized_countries = models.JSONField(default=list, blank=True)
     work_modes = models.JSONField(default=list, blank=True)
     employment_types = models.JSONField(default=list, blank=True)
@@ -280,6 +281,11 @@ class SourceSearchQuery(OwnedModel):
 
 
 class JobPosting(OwnedModel):
+    materials_status = models.CharField(max_length=16, blank=True, default='')
+    materials_started_at = models.DateTimeField(null=True, blank=True)
+
+    generation_instructions = models.TextField(null=True, blank=True, default=None, max_length=6000)
+
     REMOTE_CHOICES = [
         ('unknown', 'Unknown'),
         ('remote', 'Remote'),

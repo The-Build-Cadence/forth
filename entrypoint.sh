@@ -10,15 +10,18 @@ fi
 python manage.py safe_migrate
 
 if [[ "${DJANGO_SUPERUSER_USERNAME:-}" != "" ]]; then
-  python manage.py shell -c "
+  python manage.py shell <<'PYTHON'
+import os
 from django.contrib.auth import get_user_model
 User = get_user_model()
-username = '${DJANGO_SUPERUSER_USERNAME}'
-email = '${DJANGO_SUPERUSER_EMAIL:-admin@example.com}'
-password = '${DJANGO_SUPERUSER_PASSWORD:-adminpass}'
+username = os.environ['DJANGO_SUPERUSER_USERNAME']
+email = os.environ.get('DJANGO_SUPERUSER_EMAIL', '')
+password = os.environ.get('DJANGO_SUPERUSER_PASSWORD', '')
 if not User.objects.filter(username=username).exists():
+    if not password:
+        raise RuntimeError('DJANGO_SUPERUSER_PASSWORD is required to create an administrator.')
     User.objects.create_superuser(username=username, email=email, password=password)
-"
+PYTHON
 fi
 
 if [[ "$APP_ROLE" == "worker" ]]; then

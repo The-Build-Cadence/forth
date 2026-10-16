@@ -23,6 +23,7 @@ pypdf = "*"
 reportlab = "*"
 requests = "*"
 pgvector = "*"
+django-oauth-toolkit = "<4,>=3.3"
 
 [dev-packages]
 

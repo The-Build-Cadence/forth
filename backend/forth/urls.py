@@ -1,9 +1,12 @@
-from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
+from django.contrib.auth.views import LogoutView
+from django.http import HttpResponseNotFound
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+from oauth2_provider.urls import base_urlpatterns, metadata_urlpatterns, management_urlpatterns
+from core.mcp_views import MCPView, OAuthLoginView
 
 from core.views import (
     AgentRunViewSet,
@@ -47,7 +50,12 @@ router.register('conversations', ConversationThreadViewSet, basename='conversati
 router.register('agent-runs', AgentRunViewSet, basename='agent-run')
 router.register('approvals', ApprovalRequestViewSet, basename='approval-request')
 
-urlpatterns = [
+urlpatterns = metadata_urlpatterns + [
+    path('media/<path:path>', lambda request, path: HttpResponseNotFound()),
+    path('mcp/', MCPView.as_view(), name='mcp'),
+    path('oauth/logout/', LogoutView.as_view(next_page='/'), name='oauth-logout'),
+    path('oauth/login/', OAuthLoginView.as_view(), name='oauth-login'),
+    path('oauth/', include((base_urlpatterns + [p for p in management_urlpatterns if p.name.startswith('authorized-token')], 'oauth2_provider'), namespace='oauth2_provider')),
     path('admin/', admin.site.urls),
     path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/signup/', RegistrationView.as_view(), name='signup'),
@@ -61,6 +69,3 @@ urlpatterns = [
     path('', FrontendAppView.as_view(), name='app'),
     path('<path:path>', FrontendAppView.as_view(), name='app-path'),
 ]
-
-if settings.DEBUG:
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

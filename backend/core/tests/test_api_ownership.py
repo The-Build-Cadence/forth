@@ -248,3 +248,73 @@ class ProfileFactApiTests(APITestCase):
         self.fact.refresh_from_db()
         self.assertEqual(self.fact.title, 'Advanced Python')
         self.assertEqual(self.fact.source_document_id, self.owner_document.id)
+
+
+class AccountSurfaceTests(APITestCase):
+    """Exercise every routed owner collection, including read-only agent data."""
+    def setUp(self):
+        from core import models as m
+        self.m = m
+        self.owner = get_user_model().objects.create_user(username='surface-owner')
+        self.other = get_user_model().objects.create_user(username='surface-other')
+        self.client.force_authenticate(self.owner)
+        source = m.JobSource.objects.create(owner=self.other, kind='brave', name='Private source')
+        job = m.JobPosting.objects.create(owner=self.other, title='Private job', content_hash='private', source=source)
+        resume = m.Resume.objects.create(owner=self.other, title='Private resume')
+        app = m.Application.objects.create(owner=self.other, job=job, resume=resume)
+        thread = m.ConversationThread.objects.create(owner=self.other, title='Private conversation')
+        run = m.AgentRun.objects.create(owner=self.other, thread=thread, agent='concierge')
+        self.records = {
+            'profile/documents': m.ProfileDocument.objects.create(owner=self.other, title='Private document'),
+            'profile/facts': m.ProfileFact.objects.create(owner=self.other, title='Private fact'),
+            'profile/preferences': m.CandidatePreference.objects.create(owner=self.other, label='Private preference'),
+            'sources': source, 'jobs': job, 'resumes': resume, 'applications': app,
+            'source-runs': m.SourceRun.objects.create(owner=self.other, source=source),
+            'matches': m.JobMatch.objects.create(owner=self.other, job=job),
+            'cover-letters': m.CoverLetter.objects.create(owner=self.other, target_job=job, title='Private letter'),
+            'application-events': m.ApplicationEvent.objects.create(owner=self.other, application=app, happened_at=timezone.now()),
+            'artifacts': m.Artifact.objects.create(owner=self.other, title='Private artifact'),
+            'conversations': thread, 'agent-runs': run,
+            'approvals': m.ApprovalRequest.objects.create(owner=self.other, run=run, title='Private approval'),
+        }
+
+    def test_all_collections_and_details_are_private(self):
+        for route, record in self.records.items():
+            with self.subTest(route=route):
+                result = self.client.get(f'/api/{route}/', {'owner': self.other.pk})
+                self.assertEqual(result.status_code, 200, result.data)
+                self.assertEqual(result.data['results'], [])
+                self.assertEqual(self.client.get(f'/api/{route}/{record.pk}/').status_code, 404)
+                if route not in {'source-runs', 'matches', 'agent-runs', 'approvals'}:
+                    self.assertEqual(self.client.patch(f'/api/{route}/{record.pk}/', {}, format='json').status_code, 404)
+                    self.assertEqual(self.client.delete(f'/api/{route}/{record.pk}/').status_code, 404)
+
+    def test_owner_injection_and_profile(self):
+        response = self.client.post('/api/sources/', {
+            'owner': self.other.pk, 'name': 'Mine', 'kind': 'brave',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(self.m.JobSource.objects.get(pk=response.data['id']).owner_id, self.owner.pk)
+        self.m.CandidateProfile.objects.create(owner=self.other, headline='Private profile')
+        response = self.client.patch('/api/profile/', {'headline': 'My profile', 'owner': self.other.pk}, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.m.CandidateProfile.objects.get(owner=self.other).headline, 'Private profile')
+
+    def test_anonymous_cannot_read_any_account_surface(self):
+        self.client.force_authenticate(None)
+        for route in [*self.records, 'profile', 'profile/onboarding', 'dashboard', 'today', 'strategy']:
+            self.assertEqual(self.client.get(f'/api/{route}/').status_code, 401, route)
+
+    def test_documents_download_requires_owner_and_raw_media_is_not_served(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as directory, override_settings(MEDIA_ROOT=directory, DEBUG=True):
+            document = self.records['profile/documents']
+            document.upload.save('private.txt', ContentFile(b'private contents'), save=True)
+            self.assertEqual(self.client.get(f'/api/profile/documents/{document.pk}/download/').status_code, 404)
+            self.assertEqual(self.client.get(document.upload.url).status_code, 404)
+            self.client.force_authenticate(self.other)
+            response = self.client.get(f'/api/profile/documents/{document.pk}/download/')
+            self.assertEqual(response.status_code, 200)
+            response.close()
+            detail = self.client.get(f'/api/profile/documents/{document.pk}/').data
+            self.assertIn(f'/api/profile/documents/{document.pk}/download/', detail['upload'])

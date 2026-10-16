@@ -7,12 +7,16 @@ if [[ ! -f "$COMPOSE_FILE" ]]; then
     exit 1
 fi
 
+compose_args=(-f "$COMPOSE_FILE")
+if [[ "$COMPOSE_FILE" == "docker-compose.yml" && -f "docker-compose.override.yml" ]]; then
+    compose_args+=(-f docker-compose.override.yml)
+fi
 echo "Using compose file: $COMPOSE_FILE"
 echo "Rebuilding services..."
-docker compose -f "$COMPOSE_FILE" build
+docker compose "${compose_args[@]}" build
 
 echo "Recreating and restarting services..."
-docker compose -f "$COMPOSE_FILE" up -d --force-recreate
+docker compose "${compose_args[@]}" up -d --force-recreate
 
 echo "Done."
 exit 0

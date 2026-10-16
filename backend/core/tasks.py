@@ -60,14 +60,16 @@ def regenerate_application_materials_task(job_id: int) -> dict:
     from .domain.documents import prepare_application_materials
 
     job = JobPosting.objects.select_related('owner').get(pk=job_id)
+    job.materials_status = 'running'
+    job.save(update_fields=['materials_status', 'updated_at'])
     publish_user_event(job.owner_id, 'materials_regeneration_started', {'job_id': job.id})
     application, _ = Application.objects.get_or_create(
         owner=job.owner,
         job=job,
         defaults={'status': 'preparing'},
     )
-    application.status = 'preparing'
-    application.save(update_fields=['status', 'updated_at'])
+    # Generating a new version must not rewind an application already submitted.
+
     try:
         materials = prepare_application_materials(job.owner, job, application=application)
         ApplicationEvent.objects.create(
@@ -89,11 +91,16 @@ def regenerate_application_materials_task(job_id: int) -> dict:
             'cover_letter_id': materials['cover_letter'].id,
             'cover_letter_version': materials['cover_letter'].version,
         }
+        job.materials_status = 'ready'
+        job.save(update_fields=['materials_status', 'updated_at'])
         publish_user_event(job.owner_id, 'materials_regenerated', payload)
         return payload
     except Exception as exc:
-        application.status = 'saved'
-        application.save(update_fields=['status', 'updated_at'])
+        Application.objects.filter(pk=application.pk, status='preparing', resume__isnull=True).update(
+            status='saved', updated_at=timezone.now(),
+        )
+        job.materials_status = 'failed'
+        job.save(update_fields=['materials_status', 'updated_at'])
         publish_user_event(job.owner_id, 'materials_regeneration_failed', {
             'job_id': job.id,
             'application_id': application.id,

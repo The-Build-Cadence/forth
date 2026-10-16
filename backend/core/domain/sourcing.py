@@ -694,7 +694,7 @@ def _triage_records(source: JobSource, records: list[SourceRecord]) -> list[Sour
             continue
         verified_urls.add(record.source_url)
         evidence = f"{record.title}\n{clean_text((record.payload or {}).get('snippet') or record.description)}"
-        embedding_key = stable_hash(f"discovery-v3:{getattr(settings, 'OPENAI_EMBEDDING_MODEL', '')}:{getattr(settings, 'OPENAI_EMBEDDING_DIMENSIONS', '')}:{evidence}")
+        embedding_key = stable_hash(f"discovery-v4:{source.owner_id}:{getattr(settings, 'OPENAI_EMBEDDING_MODEL', '')}:{getattr(settings, 'OPENAI_EMBEDDING_DIMENSIONS', '')}:{evidence}")
         vector = cache.get(embedding_key)
         if vector is None:
             result = embed_text_result(evidence)

@@ -43,6 +43,19 @@ from .domain.profiles import authoritative_facts
 from .domain.resume_contacts import apply_resume_contacts, without_resume_contacts
 
 
+def _contact_link(value: str) -> str:
+    """Keep contact destinations whose visible label may only say 'LinkedIn'."""
+    from urllib.parse import urlsplit
+    value = str(value or '').strip()
+    if value.lower().startswith(('mailto:', 'tel:')):
+        return value.split(':', 1)[1].split('?', 1)[0]
+    try:
+        hostname = (urlsplit(value).hostname or '').lower()
+    except ValueError:
+        return ''
+    return value if hostname == 'linkedin.com' or hostname.endswith('.linkedin.com') else ''
+
+
 class _ReadableHTMLParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -52,6 +65,10 @@ class _ReadableHTMLParser(HTMLParser):
     def handle_starttag(self, tag, attrs):
         if tag in {'script', 'style', 'noscript'}:
             self.ignored_depth += 1
+        elif tag == 'a' and not self.ignored_depth:
+            contact = _contact_link(dict(attrs).get('href', ''))
+            if contact:
+                self.parts.append(' ' + contact + ' ')
         elif tag in {'p', 'div', 'li', 'br', 'h1', 'h2', 'h3', 'h4', 'tr'}:
             self.parts.append('\n')
 
@@ -120,7 +137,17 @@ def extract_text_from_upload(path: str) -> str:
 
             reader = PdfReader(path)
             text = '\n\n'.join(page.extract_text() or '' for page in reader.pages)
-            return text if clean_text(text) else _ocr_pdf(path)
+            text = text if clean_text(text) else _ocr_pdf(path)
+            links = []
+            for page in reader.pages:
+                for reference in page.get('/Annots', []):
+                    action = reference.get_object().get('/A') or {}
+                    if hasattr(action, 'get_object'):
+                        action = action.get_object()
+                    contact = _contact_link(action.get('/URI', ''))
+                    if contact and contact not in text:
+                        links.append(contact)
+            return '\n'.join([text, *dict.fromkeys(links)])
         if suffix == '.docx':
             from docx import Document
 
@@ -128,6 +155,11 @@ def extract_text_from_upload(path: str) -> str:
             paragraphs = [paragraph.text for paragraph in doc.paragraphs]
             for table in doc.tables:
                 paragraphs.extend(cell.text for row in table.rows for cell in row.cells)
+            for relation in doc.part.rels.values():
+                if relation.reltype.endswith('/hyperlink'):
+                    contact = _contact_link(relation.target_ref)
+                    if contact:
+                        paragraphs.append(contact)
             return '\n'.join(paragraphs)
         if suffix == '.doc':
             if not shutil.which('antiword'):
@@ -164,6 +196,10 @@ def ingest_profile_document(document: ProfileDocument) -> dict[str, Any]:
         document.status_message = 'No text was found in the document.'
         document.save(update_fields=['status', 'status_message', 'updated_at'])
         return {'created_facts': 0, 'created_chunks': 0}
+
+    if document.kind == 'resume':
+        from .domain.resume_contacts import import_resume_contacts
+        import_resume_contacts(document.owner, text)
 
     ProfileChunk.objects.filter(document=document).delete()
     chunks = []
@@ -361,6 +397,8 @@ def create_tailored_resume(owner, *, job: JobPosting, canonical: Resume | None =
         )
     facts = list(authoritative_facts(owner).order_by('-verified_by_user', 'fact_type', 'title')[:120])
     profile = getattr(owner, 'candidate_profile', None)
+    from .domain.material_preferences import material_instructions, instruction_design
+    instructions = material_instructions(owner, job)
     contact = getattr(profile, 'resume_contact', {}) or {}
     candidate_name = owner.get_full_name() or owner.get_username().replace('.', ' ').replace('_', ' ').title()
     source_markdown = without_resume_contacts(canonical.content_markdown) if contact else canonical.content_markdown
@@ -377,6 +415,7 @@ def create_tailored_resume(owner, *, job: JobPosting, canonical: Resume | None =
         candidate_name=candidate_name,
         candidate_headline=getattr(profile, 'headline', ''),
         candidate_location=getattr(profile, 'location', ''),
+        generation_instructions=instructions,
     )
     validation = {
         'generator': result.source,
@@ -387,6 +426,8 @@ def create_tailored_resume(owner, *, job: JobPosting, canonical: Resume | None =
         'evidence_links': result.data.get('evidence_links', []),
         'risk_notes': result.data.get('risk_notes', []),
     }
+    if instructions and result.source == 'heuristic':
+        validation['risk_notes'].append('AI was unavailable: explicit layout, spacing, paper size and hex colors were applied, but custom writing instructions need manual review.')
     return Resume.objects.create(
         owner=owner,
         kind='tailored',
@@ -400,10 +441,11 @@ def create_tailored_resume(owner, *, job: JobPosting, canonical: Resume | None =
                 field: contact.get(field, '') if contact.get(toggle) else ''
                 for field, toggle in [('phone', 'include_phone'), ('email', 'include_email'), ('linkedin_url', 'include_linkedin')]
             } if contact else {},
-            'design': result.data.get('design') or {
+            'generation_instructions': instructions,
+            'design': instruction_design(result.data.get('design') or {
                 'template': 'modern', 'density': 'balanced', 'accent': '#177d69',
                 'page_size': 'Letter', 'rationale': 'A clean, ATS-safe presentation selected for this application.',
-            },
+            }, instructions if result.source == 'heuristic' else ''),
         },
         parent_resume=canonical,
         target_job=job,

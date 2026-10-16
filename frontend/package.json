@@ -6,7 +6,8 @@
     "start": "ng serve",
     "build": "ng build",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "test:auth": "node --test tests/auth-isolation.test.cjs"
   },
   "dependencies": {
     "@angular/common": "^21.2.20",

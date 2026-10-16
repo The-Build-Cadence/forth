@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { ApiService, JobPosting, ProfileImprovementProposal } from '../services/api.service';
 import { RealtimeService } from '../services/realtime.service';
@@ -60,7 +60,7 @@ import { MatchRadarComponent } from '../components/match-radar.component';
             <span>
               <strong>{{ job.title }}</strong>
               <small>{{ job.company || 'Unknown company' }} · {{ job.location || job.remote_policy }}</small>
-              <span class="job-meta-line"><i [class.pass]="job.match?.hard_filter_status === 'pass'"></i>{{ job.match?.hard_filter_status || 'uncertain' }} eligibility · {{ job.freshness_status || 'fresh' }}</span>
+              <span class="job-meta-line" [title]="eligibilityHelp(job)"><i [class.pass]="job.match?.hard_filter_status === 'pass'"></i>{{ eligibilityLabel(job) }} · {{ job.freshness_status || 'fresh' }}</span>
               <span class="job-meta-line">Imported {{ job.discovered_at | date:'medium' }}</span>
               <span class="job-application-state" [class.linked]="job.application">{{ job.application ? 'In pipeline · ' + applicationStatus(job.application.status) : 'Not in pipeline yet' }}</span>
             </span>
@@ -83,13 +83,14 @@ import { MatchRadarComponent } from '../components/match-radar.component';
             <span class="status-chip">{{ selected.remote_policy }}</span>
             <span class="status-chip">{{ selected.match?.confidence || 'unscored' }}</span>
             <span class="status-chip">{{ selected.seniority || 'seniority unknown' }}</span>
-            <span class="status-chip" [class.good]="selected.match?.hard_filter_status === 'pass'">{{ selected.match?.hard_filter_status || 'uncertain' }} eligibility</span>
+            <span class="status-chip" tabindex="0" [title]="eligibilityHelp(selected)" [class.good]="selected.match?.hard_filter_status === 'pass'">{{ eligibilityLabel(selected) }}</span>
             <span class="status-chip" [class.good]="selected.match?.meets_profile_threshold">{{ selected.match?.meets_profile_threshold ? 'ready to prepare' : 'below your threshold' }} · raw target {{ selected.match?.profile_minimum_score || 50 }}</span>
             <span class="status-chip" [class.good]="!!selected.application">{{ selected.application ? 'Pipeline · ' + applicationStatus(selected.application.status) : 'Not in pipeline yet' }}</span>
           </div>
 
-          <div class="insight-callout"><span>✦</span><div><strong>Match summary</strong><p>{{ selected.match?.explanation_json?.summary || 'No match summary yet.' }}</p></div></div>
+          <div class="insight-callout"><span>✦</span><div><strong>Match summary</strong><p>{{ matchSummary(selected) }}</p></div></div>
 
+          <div class="insight-callout"><div><strong>{{ eligibilityLabel(selected) }}</strong><p>{{ eligibilityHelp(selected) }}</p><small>This checks your required conditions, such as location, work authorization and work mode. It is not an employer rejection.</small></div></div>
           <h3>Why this score</h3>
           <app-match-radar [signals]="selected.match?.signals" [jobTitle]="selected.title" />
 
@@ -114,17 +115,28 @@ import { MatchRadarComponent } from '../components/match-radar.component';
 
           <div class="profile-strengthener">
             <div><strong>Close safe wording gaps in required capabilities</strong><p>Forth prioritizes verified evidence for this role’s requirements and can clarify implicit framework knowledge without inventing experience. Nothing changes until you review it.</p></div>
-            <button class="btn-secondary" type="button" (click)="proposeImprovements(selected)" [disabled]="proposingJobId === selected.id || applyingImprovements">
+            <button class="btn-secondary" type="button" (click)="proposeImprovements(selected)" [disabled]="proposingJobId !== null || applyingImprovements">
               <span class="spinner" *ngIf="proposingJobId === selected.id || applyingImprovements" aria-hidden="true"></span>{{ proposingJobId === selected.id ? 'Reviewing evidence…' : applyingImprovements ? 'Rescoring opportunities…' : '✦ Strengthen profile' }}
             </button>
           </div>
 
-          <div class="action-row">
-            <button class="btn-primary" type="button" (click)="prepare(selected)" [disabled]="preparingJobId === selected.id"><span class="spinner" *ngIf="preparingJobId === selected.id" aria-hidden="true"></span>{{ preparingJobId === selected.id ? 'Starting specialist…' : 'Approve to prepare →' }}</button>
-            <button class="btn-secondary" type="button" (click)="regenerateMaterials(selected)" [disabled]="regeneratingJobId === selected.id"><span class="spinner" *ngIf="regeneratingJobId === selected.id" aria-hidden="true"></span>{{ regeneratingJobId === selected.id ? 'Regenerating…' : '↻ Regenerate materials' }}</button>
-            <a class="btn-secondary" *ngIf="selected.application" [routerLink]="['/pipeline']" [queryParams]="{ application: selected.application.id }">Open application · {{ applicationStatus(selected.application.status) }} →</a>
-            <button class="btn-secondary" *ngIf="!selected.application" type="button" (click)="createApplication(selected)" [disabled]="savingJobId === selected.id"><span class="spinner" *ngIf="savingJobId === selected.id" aria-hidden="true"></span>{{ savingJobId === selected.id ? 'Saving…' : 'Save to pipeline' }}</button>
-            <button class="btn-secondary" type="button" (click)="recompute(selected)" [disabled]="recomputingJobId === selected.id"><span class="spinner" *ngIf="recomputingJobId === selected.id" aria-hidden="true"></span>{{ recomputingJobId === selected.id ? 'Recomputing…' : 'Recompute' }}</button>
+          <section class="opportunity-instructions">
+            <h3>Instructions for this opportunity</h3>
+            <label><input type="checkbox" [(ngModel)]="overrideInstructions" (ngModelChange)="instructionsDirty = true">Replace my account defaults for this opportunity</label>
+            <p class="muted">{{ overrideInstructions ? 'This text replaces your account instructions for every new version of both materials. Leave it empty to use no custom instructions.' : 'New materials inherit your saved Candidate Profile instructions.' }}</p>
+            <textarea *ngIf="overrideInstructions" rows="4" maxlength="6000" aria-label="Opportunity material instructions" [(ngModel)]="instructionsDraft" (ngModelChange)="instructionsDirty = true" placeholder="For this application, use a classic layout and accent #263b36."></textarea>
+            <button class="btn-secondary" type="button" (click)="saveInstructions(selected)" [disabled]="!instructionsDirty || savingInstructions">{{ savingInstructions ? 'Saving…' : 'Save instructions' }}</button>
+            <a routerLink="/profile">Edit account defaults</a>
+          </section>
+          <div class="opportunity-actions">
+            <div><button class="btn-primary" type="button" (click)="regenerateMaterials(selected)" [disabled]="materialsBusy(selected) || instructionsDirty || savingInstructions">{{ materialsBusy(selected) ? 'Generating materials…' : selected.has_materials ? 'Generate new versions' : 'Generate resume & cover letter' }}</button><p>Creates drafts using your saved instructions and adds this role to your pipeline. Review them in Resume Studio; this does not submit an application.</p></div>
+            <p role="status" *ngIf="instructionsDirty">Save your instruction changes before generating.</p>
+            <p role="status" *ngIf="selected.materials_status === 'failed'">Generation failed. Your previous versions are safe. Try generating again.</p>
+            <a class="btn-secondary" *ngIf="selected.has_materials" routerLink="/resume-lab" [queryParams]="{ job: selected.id }">Review materials →</a>
+            <div><button class="btn-secondary" type="button" (click)="createApplication(selected)" [disabled]="!!selected.application || savingJobId !== null || materialsBusy(selected)">{{ selected.application ? 'Saved in pipeline' : savingJobId === selected.id ? 'Saving…' : 'Save to pipeline' }}</button><p>Tracks this opportunity without generating documents.</p></div>
+            <div *ngIf="selected.application"><a class="btn-secondary" [routerLink]="['/pipeline']" [queryParams]="{ application: selected.application.id }">Open application →</a><p>Manage status, notes, follow-ups and downloads.</p></div>
+            <div *ngIf="selected.application"><button class="btn-secondary" type="button" (click)="markApplied(selected)" [disabled]="selected.application.status === 'applied' || markingApplied">{{ selected.application.status === 'applied' ? 'Marked Applied' : markingApplied ? 'Saving…' : 'Mark as Applied' }}</button><p>Records that you already submitted this application, including outside Forth.</p></div>
+            <div><button class="btn-secondary" type="button" (click)="recompute(selected)" [disabled]="recomputingJobId !== null">{{ recomputingJobId === selected.id ? 'Updating match…' : 'Refresh match analysis' }}</button><p>Rechecks fit against your current profile. Does not change materials.</p></div>
           </div>
         </section>
 
@@ -196,11 +208,22 @@ export class MatchesComponent implements OnInit, OnDestroy {
   acceptedSuggestionIds = new Set<string>();
   applyingImprovements = false;
   private eventSub?: Subscription;
+  private poll?: ReturnType<typeof setInterval>;
+  overrideInstructions = false;
+  instructionsDraft = '';
+  instructionsDirty = false;
+  savingInstructions = false;
+  markingApplied = false;
 
-  constructor(private api: ApiService, private realtime: RealtimeService) {}
+  constructor(private api: ApiService, private route: ActivatedRoute, private realtime: RealtimeService) {}
 
   ngOnInit(): void {
+    const jobId = Number(this.route.snapshot.queryParamMap.get('job'));
+    if (jobId > 0) this.api.job(jobId).subscribe(job => this.select(job));
     this.load();
+    this.poll = setInterval(() => {
+      if (this.selected && this.materialsBusy(this.selected) && !this.instructionsDirty) this.select(this.selected);
+    }, 5000);
     this.eventSub = this.realtime.events$.subscribe((event) => {
       if (event.type === 'match_recomputed') {
         if (this.recomputingJobId === event.job_id) this.recomputingJobId = null;
@@ -219,16 +242,16 @@ export class MatchesComponent implements OnInit, OnDestroy {
       }
       if (event.type === 'materials_regenerated' && this.regeneratingJobId === event.job_id) {
         this.regeneratingJobId = null;
-        this.message = `Fresh resume and cover letter version ${event.cover_letter_version || ''} are ready in Resume Studio.`;
+        this.message = 'Resume and cover letter are ready to review in Resume Studio.'; this.load();
       }
       if (event.type === 'materials_regeneration_failed' && this.regeneratingJobId === event.job_id) {
         this.regeneratingJobId = null;
-        this.message = 'Could not regenerate the application materials.';
+        this.message = 'Could not generate the application materials. Please try again.'; this.load();
       }
     });
   }
 
-  ngOnDestroy(): void { this.eventSub?.unsubscribe(); }
+  ngOnDestroy(): void { this.eventSub?.unsubscribe(); clearInterval(this.poll); }
 
   load(): void {
     const params: Record<string, string> = {};
@@ -241,7 +264,7 @@ export class MatchesComponent implements OnInit, OnDestroy {
       if (this.selected) {
         const current = this.jobs.find((job) => job.id === this.selected?.id);
         if (current) this.select(current);
-        else this.selected = undefined;
+        // Keep an explicitly opened opportunity even when it is outside this page.
       } else if (this.jobs.length) {
         this.select(this.jobs[0]);
       }
@@ -252,12 +275,59 @@ export class MatchesComponent implements OnInit, OnDestroy {
   goToPage(page: number): void { if (page >= 1 && page <= this.pageCount && page !== this.currentPage) { this.currentPage = page; this.selected = undefined; this.load(); } }
 
   select(job: JobPosting): void {
+    const changed = this.selected?.id !== job.id;
+    if (changed) this.instructionsDirty = false;
     this.selected = job;
     this.api.job(job.id).subscribe({
       next: (detail) => {
-        if (this.selected?.id === detail.id) this.selected = detail;
+        if (this.selected?.id === detail.id) {
+          this.selected = detail;
+          if (!this.instructionsDirty) {
+            this.overrideInstructions = detail.generation_instructions != null;
+            this.instructionsDraft = detail.generation_instructions || '';
+          }
+          if (['ready', 'failed'].includes(detail.materials_status || '')) this.regeneratingJobId = null;
+        }
       },
       error: () => { this.message = 'Could not load the full opportunity details.'; },
+    });
+  }
+
+  materialsBusy(job: JobPosting): boolean {
+    const recent = !job.materials_started_at || Date.now() - Date.parse(job.materials_started_at) < 15 * 60 * 1000;
+    return recent && (this.regeneratingJobId === job.id || ['queued', 'running'].includes(job.materials_status || ''));
+  }
+
+  eligibilityLabel(job: JobPosting): string {
+    return ({ pass: 'Meets required conditions', fail: 'Required condition mismatch', uncertain: 'Needs confirmation' } as Record<string, string>)[job.match?.hard_filter_status || ''] || 'Not assessed yet';
+  }
+
+  eligibilityHelp(job: JobPosting): string {
+    const explanation = job.match?.explanation_json;
+    const reasons = [...(explanation?.eligibility_failures || []), ...(explanation?.eligibility_uncertainties || [])];
+    return reasons.length ? reasons.join(' ') : job.match?.hard_filter_status === 'pass'
+      ? 'No conflicts found with your saved must-have conditions. This does not guarantee employer eligibility.'
+      : 'Checks your must-have conditions, including location, work mode and authorization. Open the opportunity for the specific reasons.';
+  }
+
+  matchSummary(job: JobPosting): string {
+    return (job.match?.explanation_json?.summary || 'No match summary yet.').replace(/eligibility (fail|pass|uncertain)/gi, this.eligibilityLabel(job).toLowerCase());
+  }
+
+  saveInstructions(job: JobPosting): void {
+    this.savingInstructions = true;
+    this.api.updateJob(job.id, { generation_instructions: this.overrideInstructions ? this.instructionsDraft : null }).subscribe({
+      next: (updated) => { this.savingInstructions = false; if (this.selected?.id === job.id) { this.selected = updated; this.instructionsDirty = false; } this.message = 'Instructions saved. Generate a new version to apply them.'; },
+      error: () => { this.savingInstructions = false; this.message = 'Could not save instructions. Your edits are still here.'; },
+    });
+  }
+
+  markApplied(job: JobPosting): void {
+    if (!job.application || this.markingApplied) return;
+    this.markingApplied = true;
+    this.api.updateApplication(job.application.id, { status: 'applied' }).subscribe({
+      next: () => { this.markingApplied = false; this.message = 'Recorded as Applied.'; this.load(); },
+      error: () => { this.markingApplied = false; this.message = 'Could not update the application status.'; },
     });
   }
 
@@ -287,7 +357,10 @@ export class MatchesComponent implements OnInit, OnDestroy {
     if (this.recomputingJobId) return;
     this.recomputingJobId = job.id;
     this.api.recomputeJobMatch(job.id).subscribe({
-      next: () => this.message = 'Fit analysis is running in the background.',
+      next: (result) => {
+        if (result.mode === 'sync') { this.recomputingJobId = null; this.message = 'Fit analysis updated.'; this.load(); }
+        else this.message = 'Fit analysis is running in the background.';
+      },
       error: () => { this.recomputingJobId = null; this.message = 'Could not recompute this match.'; },
     });
   }
@@ -358,30 +431,22 @@ export class MatchesComponent implements OnInit, OnDestroy {
     });
   }
 
-  prepare(job: JobPosting): void {
-    if (this.preparingJobId) return;
-    this.preparingJobId = job.id;
-    this.message = 'Starting the preparation workflow.';
-    this.api.requestPreparation(job.id).subscribe({
-      next: () => { this.preparingJobId = null; this.message = 'Approval requested. Open Concierge to review it.'; },
-      error: () => { this.preparingJobId = null; this.message = 'Could not start the preparation workflow.'; },
-    });
-  }
-
   regenerateMaterials(job: JobPosting): void {
-    if (this.regeneratingJobId) return;
+    if (this.materialsBusy(job) || this.instructionsDirty) return;
     this.regeneratingJobId = job.id;
     this.message = 'Generating a fresh resume and cover letter from your latest profile evidence…';
     this.api.regenerateApplicationMaterials(job.id).subscribe({
       next: (result) => {
+        job.materials_status = result.mode === 'sync' ? 'ready' : 'queued';
+        job.materials_started_at = new Date().toISOString();
         if (result.mode === 'sync') {
           this.regeneratingJobId = null;
-          this.message = `Fresh resume and cover letter version ${result.cover_letter_version || ''} are ready in Resume Studio.`;
+          this.message = 'Resume and cover letter are ready to review in Resume Studio.'; this.load();
         }
       },
       error: () => {
         this.regeneratingJobId = null;
-        this.message = 'Could not regenerate the application materials.';
+        this.message = 'Could not generate the application materials. Please try again.'; this.load();
       },
     });
   }

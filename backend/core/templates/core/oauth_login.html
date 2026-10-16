@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Connect to Forth</title></head>
+<body><main>
+<h1>Connect your Forth account</h1>
+<p>Sign in with your Forth email and password to connect your private career workspace.</p>
+<form method="post">{% csrf_token %}
+{{ form.non_field_errors }}
+<p><label for="id_username">Email or username</label><br><input id="id_username" name="username" autocomplete="username" required maxlength="150"></p>
+<p><label for="id_password">Password</label><br><input id="id_password" name="password" type="password" autocomplete="current-password" required></p>
+<input type="hidden" name="next" value="{{ next }}">
+<button type="submit">Continue</button>
+</form>
+<p>New to Forth? <a href="/signup" target="_blank" rel="noopener">Create an account</a>, then return here to connect.</p>
+</main></body></html>

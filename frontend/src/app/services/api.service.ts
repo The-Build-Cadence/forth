@@ -54,6 +54,7 @@ export interface CandidateProfile {
   target_industries: string[];
   location: string;
   resume_contact?: Partial<ResumeContact>;
+  generation_instructions: string;
   authorized_countries: string[];
   work_modes: string[];
   employment_types: string[];
@@ -173,6 +174,10 @@ export interface ProfileImprovementProposal {
 }
 
 export interface JobPosting {
+  materials_status?: string;
+  materials_started_at?: string | null;
+  has_materials?: boolean;
+  generation_instructions?: string | null;
   id: number;
   title: string;
   company: string;
@@ -309,10 +314,6 @@ export class ApiService {
     return this.http.get(`${environment.apiBaseUrl}/today/`);
   }
 
-  strategy(): Observable<any> {
-    return this.http.get(`${environment.apiBaseUrl}/strategy/`);
-  }
-
   documents(): Observable<Paged<ProfileDocument>> {
     return this.http.get<Paged<ProfileDocument>>(`${environment.apiBaseUrl}/profile/documents/`);
   }
@@ -399,6 +400,10 @@ export class ApiService {
 
   job(id: number): Observable<JobPosting> {
     return this.http.get<JobPosting>(`${environment.apiBaseUrl}/jobs/${id}/`);
+  }
+
+  updateJob(id: number, payload: Partial<JobPosting>): Observable<JobPosting> {
+    return this.http.patch<JobPosting>(`${environment.apiBaseUrl}/jobs/${id}/`, payload);
   }
 
   importJob(payload: { text: string; source_url?: string; source?: number | null }): Observable<JobPosting> {

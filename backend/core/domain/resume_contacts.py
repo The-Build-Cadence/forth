@@ -60,3 +60,35 @@ def apply_resume_contacts(markdown: str, contact: dict, *, candidate_name: str) 
     if lines:
         body = body[:header.end()] + '\n\n' + '\n\n'.join(lines) + '\n\n' + body[header.end():].lstrip()
     return body.rstrip() + '\n'
+
+
+def import_resume_contacts(owner, text: str) -> dict:
+    """Seed contacts from resume evidence only until the user has saved settings."""
+    from core.models import CandidateProfile
+    from django.db import transaction
+
+    email = re.search(_EMAIL, text)
+    linkedin = re.search(_LINKEDIN, text, re.I)
+    phone = None
+    for line in text.splitlines():
+        for match in re.finditer(_PHONE, line, re.I):
+            if _is_phone(match[0], labelled=bool(re.search(r'\b(phone|mobile|tel)\b', line, re.I)), whole_line=line.strip() == match[0]):
+                phone = match[0].strip()
+                break
+        if phone:
+            break
+    url = linkedin[0].rstrip('.,;|') if linkedin else ''
+    if url and not url.lower().startswith(('http://', 'https://')):
+        url = 'https://' + url
+    contact = {'email': email[0] if email else '', 'phone': phone or '', 'linkedin_url': url,
+               'include_email': True, 'include_phone': True, 'include_linkedin': True}
+    if not any(contact[field] for field in ('email', 'phone', 'linkedin_url')):
+        return {}
+    with transaction.atomic():
+        profile, _ = CandidateProfile.objects.get_or_create(owner=owner)
+        profile = CandidateProfile.objects.select_for_update().get(pk=profile.pk)
+        if profile.resume_contact:
+            return profile.resume_contact
+        profile.resume_contact = contact
+        profile.save(update_fields=['resume_contact', 'updated_at'])
+    return contact

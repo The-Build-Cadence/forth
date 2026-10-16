@@ -88,6 +88,14 @@ class ProfileDocumentSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['status', 'status_message', 'metadata', 'created_at', 'updated_at']
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.upload:
+            path = f'/api/profile/documents/{instance.pk}/download/'
+            request = self.context.get('request')
+            data['upload'] = request.build_absolute_uri(path) if request else path
+        return data
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
         if attrs.get('kind', getattr(self.instance, 'kind', 'note')) != 'resume':
@@ -176,7 +184,7 @@ class CandidateProfileSerializer(serializers.ModelSerializer):
         model = CandidateProfile
         fields = [
             'id', 'headline', 'professional_summary', 'target_roles', 'target_industries',
-            'location', 'resume_contact', 'authorized_countries', 'work_modes', 'employment_types',
+            'location', 'resume_contact', 'generation_instructions', 'authorized_countries', 'work_modes', 'employment_types',
             'minimum_compensation', 'compensation_currency', 'minimum_match_score', 'excluded_companies',
             'completeness', 'last_reviewed_at', 'onboarding_state',
             'onboarding_completed_at', 'embedding_model', 'embedding_provider',
@@ -251,6 +259,14 @@ class MatchSignalSerializer(serializers.ModelSerializer):
 
 
 class JobMatchSerializer(serializers.ModelSerializer):
+    explanation_json = serializers.SerializerMethodField()
+
+    def get_explanation_json(self, obj):
+        from .domain.material_preferences import readable_match_summary
+        explanation = dict(obj.explanation_json or {})
+        explanation['summary'] = readable_match_summary(explanation.get('summary', ''))
+        return explanation
+
     job_title = serializers.CharField(source='job.title', read_only=True)
     company = serializers.CharField(source='job.company', read_only=True)
     signals = MatchSignalSerializer(many=True, read_only=True)
@@ -308,6 +324,11 @@ class JobMatchSummarySerializer(serializers.ModelSerializer):
 
 
 class JobPostingSerializer(OwnerScopedRelationsMixin, serializers.ModelSerializer):
+    has_materials = serializers.SerializerMethodField()
+
+    def get_has_materials(self, obj):
+        return Resume.objects.filter(owner=obj.owner, target_job=obj).exists()
+
     match = JobMatchSerializer(read_only=True)
     application = serializers.SerializerMethodField()
     owner_related_fields = {'source': JobSource}
@@ -322,11 +343,12 @@ class JobPostingSerializer(OwnerScopedRelationsMixin, serializers.ModelSerialize
             'source_url', 'application_url', 'status', 'posted_at',
             'canonical_url', 'source_external_id', 'last_seen_at', 'expires_at',
             'freshness_status', 'discovered_at', 'created_at', 'updated_at', 'match', 'application',
-            'requirements', 'versions', 'embedding_model', 'embedding_provider',
+            'requirements', 'versions', 'generation_instructions', 'materials_status', 'materials_started_at', 'has_materials', 'embedding_model', 'embedding_provider',
             'embedding_updated_at',
         ]
         read_only_fields = [
             'extracted_json', 'discovered_at', 'created_at', 'updated_at', 'match',
+            'materials_status', 'materials_started_at', 'has_materials',
             'embedding_model', 'embedding_provider', 'embedding_updated_at',
         ]
 
@@ -542,9 +564,6 @@ class ApplicationSerializer(OwnerScopedRelationsMixin, serializers.ModelSerializ
 
     def validate(self, attrs):
         status = attrs.get('status', getattr(self.instance, 'status', None))
-        resume = attrs.get('resume', getattr(self.instance, 'resume', None))
-        if status == 'applied' and (resume is None or not resume.approved):
-            raise serializers.ValidationError({'status': 'Approve the resume used for this application before marking it applied.'})
         if status == 'applied' and not attrs.get('applied_at') and not getattr(self.instance, 'applied_at', None):
             attrs['applied_at'] = timezone.now()
         return attrs

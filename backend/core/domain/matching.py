@@ -353,7 +353,9 @@ def recompute_match(job: JobPosting) -> JobMatch:
     summary = (
         f'{"Strong" if score >= 80 else "Promising" if score >= 65 else "Possible" if score >= 50 else "Low"} fit: '
         f'{len(covered)} supported capabilities, {len(missing)} required gaps, '
-        f'{len(preferred_gaps)} preferred gaps, eligibility {hard_status}.'
+        f'{len(preferred_gaps)} preferred gaps. '
+        + {'pass': 'Matches your required conditions.', 'fail': 'Conflicts with your required conditions.',
+           'uncertain': 'Some required conditions need confirmation.'}[hard_status]
     )
     explanation = {
         'summary': summary,

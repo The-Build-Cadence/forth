@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from django.utils import timezone
 
+from core.domain.material_preferences import readable_match_summary
 from core.domain.profiles import profile_health
 from core.models import Application, ApprovalRequest, JobPosting
 
@@ -41,7 +42,7 @@ def today_briefing(owner) -> dict:
                 'score': getattr(getattr(job, 'match', None), 'score', 0),
                 'confidence': getattr(getattr(job, 'match', None), 'confidence', 'low'),
                 'eligibility': getattr(getattr(job, 'match', None), 'hard_filter_status', 'uncertain'),
-                'summary': (getattr(getattr(job, 'match', None), 'explanation_json', {}) or {}).get('summary', ''),
+                'summary': readable_match_summary((getattr(getattr(job, 'match', None), 'explanation_json', {}) or {}).get('summary', '')),
             }
             for job in queue
         ],

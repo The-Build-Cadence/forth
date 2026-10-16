@@ -341,21 +341,18 @@ class AgenticApiOwnershipTests(APITestCase):
         self.assertEqual(run.status, 'succeeded')
         self.assertEqual(source.last_status, 'succeeded')
 
-    def test_application_requires_an_approved_resume_before_applied(self):
+    def test_application_can_be_marked_applied_with_an_unapproved_resume(self):
         job = JobPosting.objects.create(
             owner=self.owner, title='QA Engineer', description_text='Python Django', content_hash='qa-guard',
         )
         resume = Resume.objects.create(owner=self.owner, title='Draft', kind='tailored', target_job=job)
         application = Application.objects.create(owner=self.owner, job=job, resume=resume, status='materials_ready')
 
-        blocked = self.client.patch(f'/api/applications/{application.id}/', {'status': 'applied'}, format='json')
-        self.assertEqual(blocked.status_code, status.HTTP_400_BAD_REQUEST)
-
-        resume.approved = True
-        resume.save(update_fields=['approved'])
         allowed = self.client.patch(f'/api/applications/{application.id}/', {'status': 'applied'}, format='json')
         self.assertEqual(allowed.status_code, status.HTTP_200_OK)
         self.assertIsNotNone(allowed.data['applied_at'])
+        resume.refresh_from_db()
+        self.assertFalse(resume.approved)
 
     def test_rejecting_a_material_approval_cancels_without_side_effects(self):
         job = JobPosting.objects.create(

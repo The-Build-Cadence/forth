@@ -137,6 +137,14 @@ class ProfileDocumentViewSet(OwnedViewSet):
         document.save(update_fields=['status', 'status_message', 'updated_at'])
         enqueue_profile_ingestion(document)
 
+    @action(detail=True, methods=['get'])
+    def download(self, request, pk=None):
+        document = self.get_object()
+        if not document.upload:
+            raise Http404('Document file is unavailable.')
+        return FileResponse(document.upload.open('rb'), as_attachment=True,
+                            filename=Path(document.upload.name).name)
+
     @action(detail=True, methods=['post'])
     def ingest(self, request, pk=None):
         document = self.get_object()
@@ -497,6 +505,16 @@ class JobPostingViewSet(OwnedViewSet):
     @action(detail=True, methods=['post'])
     def regenerate_materials(self, request, pk=None):
         job = self.get_object()
+        from datetime import timedelta
+        from django.db import transaction
+        with transaction.atomic():
+            job = JobPosting.objects.select_for_update().get(pk=job.pk, owner=request.user)
+            if (job.materials_status in {'queued', 'running'} and job.materials_started_at
+                    and job.materials_started_at > timezone.now() - timedelta(minutes=15)):
+                return Response({'mode': 'async', 'job_id': job.id, 'status': job.materials_status}, status=202)
+            job.materials_status = 'queued'
+            job.materials_started_at = timezone.now()
+            job.save(update_fields=['materials_status', 'materials_started_at', 'updated_at'])
         publish_user_event(request.user.id, 'materials_regeneration_queued', {'job_id': job.id})
         try:
             task = regenerate_application_materials_task.delay(job.id)
@@ -531,6 +549,12 @@ class JobMatchViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class ResumeViewSet(OwnedViewSet):
+    def perform_create(self, serializer):
+        resume = serializer.save(owner=self.request.user)
+        if resume.kind == 'canonical':
+            from .domain.resume_contacts import import_resume_contacts
+            import_resume_contacts(self.request.user, resume.content_markdown)
+
     serializer_class = ResumeSerializer
     queryset = Resume.objects.select_related('target_job', 'parent_resume').prefetch_related('claims').all()
 
@@ -614,7 +638,7 @@ class CoverLetterViewSet(OwnedViewSet):
         letter = self.get_object()
         artifact = render_pdf(
             owner=request.user, title=letter.title, markdown=letter.content_markdown,
-            kind='cover_letter', cover_letter=letter,
+            kind='cover_letter', cover_letter=letter, design=(letter.content_json or {}).get('design'),
         )
         filename = Path(artifact.file.name).name
         return FileResponse(artifact.file.open('rb'), as_attachment=True, filename=filename, content_type=artifact.mime_type)

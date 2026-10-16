@@ -40,14 +40,12 @@ import { OnboardingWizardComponent } from './onboarding/onboarding-wizard.compon
           <a routerLink="/concierge" [class.active]="active('/concierge')" [attr.aria-current]="active('/concierge') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">✦</span>Concierge</a>
           <a routerLink="/matches" [class.active]="active('/matches')" [attr.aria-current]="active('/matches') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">◇</span>Opportunities</a>
           <a routerLink="/pipeline" [class.active]="active('/pipeline')" [attr.aria-current]="active('/pipeline') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">▦</span>Applications</a>
-          <a routerLink="/resume-lab" [class.active]="active('/resume-lab')" [attr.aria-current]="active('/resume-lab') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">▤</span>Document Studio</a>
+          <a routerLink="/resume-lab" [class.active]="active('/resume-lab')" [attr.aria-current]="active('/resume-lab') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">▤</span>Resume Studio</a>
 
           <span class="nav-section-label nav-section-spaced">Knowledge & tools</span>
           <a routerLink="/profile" [class.active]="active('/profile')" [attr.aria-current]="active('/profile') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">◎</span>Candidate Profile</a>
           <a routerLink="/sources" [class.active]="active('/sources')" [attr.aria-current]="active('/sources') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">⌁</span>Sources</a>
-          <a routerLink="/strategy" [class.active]="active('/strategy')" [attr.aria-current]="active('/strategy') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">↗</span>Strategy</a>
           <a routerLink="/artifacts" [class.active]="active('/artifacts')" [attr.aria-current]="active('/artifacts') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">□</span>Artifacts</a>
-          <a routerLink="/settings" [class.active]="active('/settings')" [attr.aria-current]="active('/settings') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">⚙</span>Settings</a>
         </nav>
 
         <div class="side-nav-context">
@@ -106,6 +104,9 @@ export class AppComponent implements OnInit, OnDestroy {
       } else {
         this.realtime.disconnect();
         this.showOnboarding = false;
+        this.work.clear();
+        this.activeWork = [];
+        this.latestEvent = '';
       }
     });
     this.navSub = this.router.events.pipe(filter((event) => event instanceof NavigationEnd)).subscribe((event) => {
@@ -152,8 +153,10 @@ export class AppComponent implements OnInit, OnDestroy {
 
   private checkOnboarding(): void {
     if (sessionStorage.getItem('forth_onboarding_dismissed') === '1') return;
+    const session = this.auth.getRefreshToken();
     this.api.onboarding().subscribe({
       next: (snapshot) => {
+        if (this.auth.getRefreshToken() !== session) return;
         // The request may have started before the candidate dismissed another
         // in-flight wizard instance. Never let a late response reopen it.
         this.showOnboarding = sessionStorage.getItem('forth_onboarding_dismissed') !== '1' && snapshot.needs_onboarding;

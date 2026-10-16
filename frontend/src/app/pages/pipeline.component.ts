@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ApiService, ApplicationRecord } from '../services/api.service';
 import { MatchRadarComponent } from '../components/match-radar.component';
 
@@ -12,7 +12,7 @@ interface StatusDef {
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, MatchRadarComponent],
+  imports: [CommonModule, FormsModule, RouterLink, MatchRadarComponent],
   template: `
     <section class="page">
       <div class="page-head">
@@ -86,6 +86,8 @@ interface StatusDef {
           </label>
         </div>
 
+        <p class="field-hint">Choose Applied to record a submission made outside Forth. No generated or approved resume is required.</p>
+        <p><a routerLink="/matches" [queryParams]="{ job: selected.job }">Edit material instructions for this application →</a></p>
         <label>
           Notes
           <textarea rows="5" [(ngModel)]="selected.notes" name="notes"></textarea>

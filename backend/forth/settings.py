@@ -27,9 +27,11 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'channels',
     'core',
+    'oauth2_provider',
 ]
 
 MIDDLEWARE = [
+    'core.middleware.PrivateResponseMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -98,7 +100,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
@@ -170,3 +171,39 @@ OPENAI_MAX_RETRIES = int(os.environ.get('OPENAI_MAX_RETRIES', '0'))
 SOURCE_HTTP_TIMEOUT_SECONDS = int(os.environ.get('SOURCE_HTTP_TIMEOUT_SECONDS', '20'))
 GOTENBERG_URL = os.environ.get('GOTENBERG_URL', 'http://gotenberg:3000')
 GOTENBERG_TIMEOUT_SECONDS = int(os.environ.get('GOTENBERG_TIMEOUT_SECONDS', '45'))
+
+AUTHENTICATION_BACKENDS = ['core.authentication.AccountBackend']
+FORTH_PUBLIC_URL = os.environ.get('FORTH_PUBLIC_URL', 'http://localhost:8021').rstrip('/')
+LOGIN_URL = '/oauth/login/'
+OAUTH2_PROVIDER = {
+    'SCOPES': {'forth:access': 'Read and update your Forth career workspace'},
+    'DEFAULT_SCOPES': ['forth:access'],
+    'PKCE_REQUIRED': True,
+    'OIDC_ISS_ENDPOINT': FORTH_PUBLIC_URL,
+    'OAUTH2_PROTECTED_RESOURCE_IDENTIFIER': f'{FORTH_PUBLIC_URL}/mcp/',
+    'OAUTH2_PROTECTED_RESOURCE_AUTHORIZATION_SERVERS': [FORTH_PUBLIC_URL],
+    'OAUTH2_PROTECTED_RESOURCE_NAME': 'Forth career workspace',
+    'OAUTH2_GRANT_TYPES_SUPPORTED': ['authorization_code', 'refresh_token'],
+    'OAUTH2_RESPONSE_TYPES_SUPPORTED': ['code'],
+    'OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED': ['none', 'client_secret_post', 'client_secret_basic'],
+    'CIMD_ENABLED': True,
+    'CIMD_METADATA_FETCHER': 'core.oauth.ForthCIMDMetadataFetcher',
+    'CIMD_REGISTRATION_PERMISSION_CLASSES': ['oauth2_provider.cimd.HostAllowlistCIMDPermission'],
+    'CIMD_ALLOWED_HOSTS': ['chatgpt.com'],
+    'COMPLIANT_BCP_RFC9700_PKCE_METHOD': True,
+    'COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT': True,
+    'COMPLIANT_BCP_RFC9700_PASSWORD_GRANT': True,
+    'COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT': True,
+    'COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS': True,
+    'COMPLIANT_BCP_RFC9700_TOKEN_STORAGE': True,
+    'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    'ROTATE_REFRESH_TOKEN': True,
+    'REFRESH_TOKEN_REUSE_PROTECTION': True,
+    'OAUTH2_VALIDATOR_CLASS': 'core.oauth.ForthOAuth2Validator',
+}
+
+SESSION_COOKIE_SECURE = FORTH_PUBLIC_URL.startswith('https://')
+CSRF_COOKIE_SECURE = SESSION_COOKIE_SECURE
+# Enable only behind a proxy that overwrites this header, never a client-facing app server.
+if os.environ.get('DJANGO_TRUST_PROXY_HEADERS', '0') == '1':
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

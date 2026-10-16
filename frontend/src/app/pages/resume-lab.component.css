@@ -113,3 +113,6 @@
   .page-shadow { width: min(100%, 1120px); }
   .resume-paper { min-height: 900px; font-size: clamp(11px, .8vw, 14px); }
 }
+.studio-instruction-preview { padding: 18px; margin: 18px 0; background: var(--panel-subtle); border: 1px solid var(--line); border-radius: 12px; }
+.studio-instruction-preview p { white-space: pre-wrap; }
+.studio-instruction-preview small { display: block; margin-top: 10px; color: var(--muted); }

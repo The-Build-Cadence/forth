@@ -242,7 +242,7 @@ npm --prefix frontend audit --omit=dev
 
 ## MCP integration
 
-Forth can be used as an owner-scoped local MCP server for browser-assisted job research, explainable matching, and claim-validated application drafts. See [the MCP integration guide](docs/mcp-integration.md) for setup and the confirmation boundaries around external applications.
+Forth supports credential-authenticated local MCP and per-account OAuth remote MCP at `/mcp/` for browser-assisted job research, explainable matching, and claim-validated application drafts. See [the MCP integration guide](docs/mcp-integration.md) for setup and the confirmation boundaries around external applications.
 
 The browser suite expects the Docker stack at `http://127.0.0.1:8021` and the
 local `admin` / `adminpass` account. Override the origin with `E2E_BASE_URL`.

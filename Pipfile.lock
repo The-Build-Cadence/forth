@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "19465b85321e1ce019ebdc8535343a7996cd8ef0e9cacbf03c05dcc809e56b45"
+            "sha256": "cca2cdc976747fa6419d8dc6f7de2594edcf2dd4d4cb2df8a489b820fa17974c"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -637,6 +637,15 @@
             "markers": "python_version >= '3.9'",
             "version": "==4.9.0"
         },
+        "django-oauth-toolkit": {
+            "hashes": [
+                "sha256:c47f2a70e83bade0a47a5e9b20e86030d8ed9c0a8f10ec4ed30446cad7291f2d",
+                "sha256:c4de73c0765eed55a99ea0fa8433b20664dcc1f43930149cff569abed166c5c2"
+            ],
+            "index": "pypi",
+            "markers": "python_version >= '3.10'",
+            "version": "==3.4.1"
+        },
         "djangorestframework": {
             "hashes": [
                 "sha256:605d79fa2ec2f02905492e5ea13d903c2d842d0b4c915a57f7bf02ab9f3c91dd",
@@ -835,6 +844,14 @@
             ],
             "markers": "python_version >= '3.10'",
             "version": "==0.17.0"
+        },
+        "jwcrypto": {
+            "hashes": [
+                "sha256:77e856818e514cb3d64a1043b6885a7d52f5cc37773f5e944de02103c8d3a54f",
+                "sha256:a1e1570da5c2e35dbcd375ec1d2891a24de8eb35ee2c1fe8e91978efb72cfe90"
+            ],
+            "markers": "python_version >= '3.9'",
+            "version": "==1.6.1"
         },
         "kombu": {
             "hashes": [
@@ -1122,6 +1139,14 @@
             ],
             "markers": "python_version >= '3.10'",
             "version": "==1.2.3"
+        },
+        "oauthlib": {
+            "hashes": [
+                "sha256:624c28c13a0a59cabf9747dfa52af63be3e512a7f2714df16e91b5b3a145e6cd",
+                "sha256:efb274799819440f95b4ab3b818869f1ce9ae26c5beacba0201d1a1b76b54f86"
+            ],
+            "markers": "python_version >= '3.9'",
+            "version": "==4.0.0"
         },
         "openai": {
             "hashes": [

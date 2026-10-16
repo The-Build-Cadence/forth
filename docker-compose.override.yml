@@ -1,0 +1,17 @@
+# LAN-only HTTPS; do not create a WAN port-forward.
+# Port 443 on this host belongs to the existing Kubernetes ingress.
+services:
+  nginx:
+    ports: !override
+      - "127.0.0.1:8021:80"
+      - "192.168.3.105:8443:443"
+    volumes:
+      - ./deploy/nginx/https.conf:/etc/nginx/conf.d/https.conf:ro
+      - ./.secrets/tls:/etc/nginx/forth-tls:ro
+
+# Existing storage is managed independently of the renamed Compose project.
+volumes:
+  db_data:
+    external: true
+  redis_data:
+    external: true
