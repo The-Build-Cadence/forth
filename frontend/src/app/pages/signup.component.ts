@@ -11,7 +11,7 @@ import { AuthService } from '../services/auth.service';
   template: `
     <main class="auth-page signup-page">
       <section class="auth-story signup-story">
-        <div class="auth-brand"><span class="brand-mark">F</span><strong>Forth</strong></div>
+        <div class="auth-brand"><img class="brand-mark" src="/brand-mark.svg" alt="" width="40" height="40"><strong>Forth</strong></div>
         <div class="signup-story-copy">
           <p class="eyebrow">A better job search starts with context</p>
           <h1>Build the career profile your search deserves.</h1>
@@ -28,7 +28,7 @@ import { AuthService } from '../services/auth.service';
       </section>
 
       <section class="auth-panel signup-panel">
-        <div class="mobile-auth-brand"><span class="brand-mark">F</span><strong>Forth</strong></div>
+        <div class="mobile-auth-brand"><img class="brand-mark" src="/brand-mark.svg" alt="" width="40" height="40"><strong>Forth</strong></div>
         <div class="signup-step"><span>1 of 2</span><i><b></b></i></div>
         <p class="eyebrow">Create your workspace</p>
         <h2>Let’s get your search moving</h2>

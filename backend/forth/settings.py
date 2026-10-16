@@ -166,6 +166,7 @@ def _runtime_secret(environment_name: str, secret_path: str) -> str:
 
 
 OPENAI_API_KEY = _runtime_secret('OPENAI_API_KEY', '/run/secrets/openai_api_key')
+ACCOUNT_ENCRYPTION_KEY = _runtime_secret('ACCOUNT_ENCRYPTION_KEY', '/run/secrets/account_encryption_key')
 OPENAI_TEXT_MODEL = os.environ.get('OPENAI_TEXT_MODEL', 'gpt-4.1-mini')
 OPENAI_EMBEDDING_MODEL = os.environ.get('OPENAI_EMBEDDING_MODEL', 'text-embedding-3-large')
 OPENAI_EMBEDDING_DIMENSIONS = int(os.environ.get('OPENAI_EMBEDDING_DIMENSIONS', '3072'))

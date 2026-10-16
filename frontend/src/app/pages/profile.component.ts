@@ -54,8 +54,7 @@ import { RealtimeService } from '../services/realtime.service';
           </label>
         </div>
         <label>Professional summary<textarea rows="6" [(ngModel)]="profile.professional_summary" name="professionalSummary" placeholder="Describe what you are great at, the work you enjoy, and what you want next."></textarea></label>
-        <label>Default material instructions<textarea rows="5" maxlength="6000" [(ngModel)]="profile.generation_instructions" name="generationInstructions" placeholder="Use a minimal layout, accent #2f5f9f, concise bullets, and a warm, direct cover letter."></textarea></label>
-        <p class="field-hint">Used for every new resume and cover letter. An opportunity can replace these defaults. Supported layouts: modern, classic, minimal; spacing: compact, balanced, spacious; paper: Letter or A4. Use a six-digit hex color for an exact accent. Existing versions stay unchanged.</p>
+        <p><a routerLink="/settings">Manage default material instructions in Settings →</a></p>
         <div class="action-row"><button class="btn-primary" type="button" (click)="saveProfile()" [disabled]="savingProfile"><span class="spinner" *ngIf="savingProfile" aria-hidden="true"></span>{{ savingProfile ? 'Saving…' : 'Save search brief' }}</button><span class="muted">Changes immediately affect future scoring.</span></div>
       </section>
 
@@ -262,7 +261,6 @@ export class ProfileComponent implements OnInit, OnDestroy {
     this.savingProfile = true;
     const payload = {
       base_updated_at: this.profile.updated_at,
-      generation_instructions: this.profile.generation_instructions,
       headline: this.profile.headline,
       professional_summary: this.profile.professional_summary,
       location: this.profile.location,

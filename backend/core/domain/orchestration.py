@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.account_ai import text_model
+
 import json
 from typing import Any, Callable
 
@@ -93,7 +95,7 @@ def create_concierge_run(
         agent=route['agent'],
         objective=message,
         input=run_input,
-        model=getattr(settings, 'OPENAI_TEXT_MODEL', ''),
+        model=text_model(),
     )
 
 

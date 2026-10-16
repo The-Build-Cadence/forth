@@ -578,7 +578,8 @@ def _verify_job_page(record: SourceRecord, *, followed_employer: bool = False) -
             return 'page_unverified', 'The job page exceeded the redirect limit.'
     except (requests.RequestException, ValueError):
         return 'page_unverified', 'The job page was blocked or could not be reached.'
-    record.payload = {**(record.payload or {}), 'verified_url': url, 'page_verified_at': timezone.now().isoformat()}
+    from .application_fields import html_fields
+    record.payload = {**(record.payload or {}), 'verified_url': url, 'page_verified_at': timezone.now().isoformat(), 'application_fields': html_fields(page)}
     if not started_on_ats and not followed_employer:
         # Reposts can help discovery, but import the verified employer page,
         # never the aggregator's copy. Multiple different jobs are ambiguous.

@@ -17,19 +17,24 @@ test('account costs show concise totals and unavailable state', async ({ page })
         brave: { ...totals, cost_usd: '0.1' },
       } } });
     }
+    if (new URL(route.request().url()).pathname === '/api/account/settings/') return route.fulfill({json: {name: 'Candidate', email: 'candidate@example.com', text_model: 'gpt-4.1-mini', default_text_model: 'gpt-4.1-mini', embedding_model: 'text-embedding-3-large', has_openai_key: false, use_personal_ai: false, reasoning_effort: '', generation_instructions: ''}});
     return route.fulfill({ json: { count: 0, results: [] } });
   });
   await page.goto('/pipeline');
   if (await page.getByRole('button', { name: 'Toggle navigation' }).isVisible()) {
     await page.getByRole('button', { name: 'Toggle navigation' }).click();
   }
-  const monitor = page.getByRole('region', { name: 'Your API costs' });
-  await expect(monitor).toContainText('$0.0006');
-  await expect(monitor).toContainText('$0.10');
-  await expect(monitor.locator('details')).toHaveCount(0);
-  await expect(monitor.locator('.usage-row')).toHaveText(['AI$0.0006', 'Search$0.10']);
+  const link = page.getByRole('link', { name: 'API costs' });
+  await expect(link).toContainText('$0.1006');
+  await link.click();
+  await expect(page).toHaveURL(/settings#api-costs$/);
+  const monitor = page.getByRole('region', { name: 'API cost breakdown' });
+  await expect(monitor).toBeInViewport();
+  await expect(monitor.locator('.grand-total')).toHaveText('$0.1006');
+  await expect(monitor.locator('.cost-item strong')).toHaveText(['$0.0006', '$0.10', '$0.01']);
+  await expect(monitor).toContainText('2 requests have pending or unknown costs');
   unavailable = true;
-  await expect(monitor).toHaveAttribute('title', 'Costs unavailable. Retrying automatically.', { timeout: 20000 });
-  await expect(monitor.locator('strong')).toHaveText(['—', '—']);
+  await expect(monitor).toContainText('Costs unavailable', { timeout: 20000 });
+  await expect(monitor.locator('.grand-total')).toHaveText('—');
   expect(errors).toEqual([]);
 });

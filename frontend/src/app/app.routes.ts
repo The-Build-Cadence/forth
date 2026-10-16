@@ -1,3 +1,4 @@
+import { SettingsComponent } from './pages/settings.component';
 import { Routes } from '@angular/router';
 import { LoginComponent } from './pages/login.component';
 import { DashboardComponent } from './pages/dashboard.component';
@@ -24,6 +25,6 @@ export const routes: Routes = [
   { path: 'sources', component: SourcesComponent, canActivate: [authGuard] },
   { path: 'strategy', redirectTo: 'profile', pathMatch: 'full' },
   { path: 'artifacts', redirectTo: 'pipeline', pathMatch: 'full' },
-  { path: 'settings', redirectTo: 'profile', pathMatch: 'full' },
+  { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
   { path: '**', redirectTo: 'dashboard' },
 ];

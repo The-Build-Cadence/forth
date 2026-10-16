@@ -198,6 +198,9 @@ def prepare_application(arguments: dict[str, Any]) -> dict[str, Any]:
     application, _ = Application.objects.get_or_create(
         owner=owner, job=job, defaults={'status': 'preparing'},
     )
+    if 'fields' in arguments:
+        from core.domain.application_fields import register_fields
+        register_fields(application, arguments['fields'])
     result = prepare_application_materials(owner, job, application=application)
     resume, letter = result['resume'], result['cover_letter']
     return {
@@ -214,6 +217,7 @@ def prepare_application(arguments: dict[str, Any]) -> dict[str, Any]:
             'approved': letter.approved, 'validation': letter.validation, 'design': letter.content_json.get('design'),
             'generation_instructions': letter.content_json.get('generation_instructions', ''),
         },
+        'form_fields': application.form_fields,
         'next_step': 'Review and explicitly approve the drafts. Application submission remains a separate browser action requiring confirmation.',
     }
 
@@ -230,7 +234,7 @@ def get_application_materials(arguments: dict[str, Any]) -> dict[str, Any]:
     return {
         'job': _job_result(job),
         'application': None if not application else {
-            'id': application.id, 'status': application.status, 'applied_at': application.applied_at,
+            'id': application.id, 'status': application.status, 'applied_at': application.applied_at, 'form_fields': application.form_fields,
         },
         'resume': None if not resume else {
             'id': resume.id, 'content_markdown': resume.content_markdown,
@@ -278,6 +282,7 @@ def get_opportunity(arguments):
     job = _owned(JobPosting, arguments.get('job_id'), 'job_id')
     return {**_job_result(job), 'description': job.description_text,
             'requirements': list(job.requirements.values('kind', 'text', 'is_hard')),
+            'application_fields': (job.extracted_json or {}).get('application_fields', []),
             'effective_generation_instructions': material_instructions(job.owner, job),
             'instruction_source': 'account' if job.generation_instructions is None else 'opportunity',
             'applications': list(Application.objects.filter(owner=job.owner, job=job).values('id', 'status', 'applied_at')),
@@ -398,12 +403,30 @@ TOOLS: dict[str, tuple[str, dict[str, Any], Callable[[dict[str, Any]], dict[str,
 }
 
 
+def prepare_application_answers(arguments):
+    from core.domain.application_fields import register_fields, prepare_answers
+    application = _owned(Application, arguments.get('application_id'), 'application_id')
+    if 'fields' in arguments:
+        register_fields(application, arguments['fields'])
+    return {'application_id': application.id, 'fields': prepare_answers(application, discover='fields' not in arguments),
+            'next_step': 'Review draft answers; needs_input fields require the candidate. This does not submit anything.'}
+
+
 def get_usage_summary(arguments):
     from core.usage import usage_summary
     return usage_summary(_owner())
 
 
+APPLICATION_FIELDS_SCHEMA = {'type': 'array', 'maxItems': 60, 'items': {'type': 'object', 'properties': {
+    'id': {'type': 'string', 'description': 'Stable field name or id from the application form.'},
+    'label': {'type': 'string'}, 'type': {'type': 'string', 'enum': ['text', 'textarea', 'email', 'url', 'number', 'date', 'select', 'multiselect', 'checkbox', 'file']},
+    'required': {'type': 'boolean'}, 'options': {'type': 'array', 'items': {'type': 'string'}},
+    'max_length': {'type': ['integer', 'null']}, 'answer': {'type': 'string', 'description': 'Optional candidate-supplied answer. Omit to draft.'}}, 'required': ['id', 'label']}}
+TOOLS['prepare_application'][1]['properties']['fields'] = APPLICATION_FIELDS_SCHEMA
+
 TOOLS.update({
+    'prepare_application_answers': ('Supply the actual application form fields observed in the browser, then draft missing answers from candidate evidence. IDs merge with existing fields; user answers are preserved. Include exact choice labels and character limits. Consent, demographic, upload, and unsupported answers require candidate input. Never submits a form.',
+        {'type': 'object', 'properties': {'application_id': {'type': 'integer'}, 'fields': APPLICATION_FIELDS_SCHEMA}, 'required': ['application_id']}, prepare_application_answers),
     'get_usage_summary': ('Read your recorded OpenAI and Brave request counts and estimated USD costs, including background work. Unknown costs are excluded; historical usage before tracking is unavailable.',
         {'type': 'object', 'properties': {}}, get_usage_summary),
     'get_opportunity': ('Read the complete posting, requirement-check reasons, match signals, linked applications and effective material instructions.',

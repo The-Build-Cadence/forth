@@ -293,7 +293,13 @@ export interface ConversationThread {
   updated_at: string;
 }
 
+export interface ApplicationField {
+  id: string; label: string; type: string; required: boolean; options: string[];
+  max_length: number | null; answer?: string; status?: string; note?: string;
+}
+
 export interface ApplicationRecord {
+  form_fields?: ApplicationField[];
   id: number;
   job: number;
   job_detail: JobPosting;
@@ -319,6 +325,11 @@ export interface ApplicationRecord {
 @Injectable({ providedIn: 'root' })
 export class ApiService {
   constructor(private http: HttpClient) {}
+
+  accountSettings(): Observable<any> { return this.http.get(`${environment.apiBaseUrl}/account/settings/`); }
+  saveAccountSettings(data: any): Observable<any> { return this.http.patch(`${environment.apiBaseUrl}/account/settings/`, data); }
+  accountModels(): Observable<any> { return this.http.get(`${environment.apiBaseUrl}/account/models/`); }
+  prepareAnswers(id: number): Observable<ApplicationRecord> { return this.http.post<ApplicationRecord>(`${environment.apiBaseUrl}/applications/${id}/prepare_answers/`, {}); }
 
   usage(): Observable<UsageSummary> {
     return this.http.get<UsageSummary>(`${environment.apiBaseUrl}/usage/`);

@@ -521,6 +521,7 @@ class Application(OwnedModel):
     ]
 
     job = models.ForeignKey(JobPosting, on_delete=models.CASCADE, related_name='applications')
+    form_fields = models.JSONField(default=list, blank=True)
     application_form_url = models.URLField(max_length=1000, blank=True)
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='saved', db_index=True)
     resume = models.ForeignKey(Resume, null=True, blank=True, on_delete=models.SET_NULL, related_name='applications')
@@ -708,8 +709,18 @@ class ProviderUsage(models.Model):
     cached_tokens = models.PositiveBigIntegerField(null=True)
     cost_usd = models.DecimalField(max_digits=20, decimal_places=10, null=True)
     rates = models.JSONField(default=list)
+    credential_source = models.CharField(max_length=16, default='shared')
     provider_request_id = models.CharField(max_length=200, blank=True)
     error_type = models.CharField(max_length=80, blank=True)
 
     class Meta:
         indexes = [models.Index(fields=['owner', 'provider', 'created_at'])]
+
+
+class AccountSettings(models.Model):
+    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='account_settings')
+    openai_key_encrypted = models.TextField(blank=True)
+    use_personal_ai = models.BooleanField(default=False)
+    text_model = models.CharField(max_length=120, blank=True)
+    reasoning_effort = models.CharField(max_length=12, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)

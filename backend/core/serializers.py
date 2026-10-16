@@ -545,12 +545,25 @@ class ApplicationSerializer(OwnerScopedRelationsMixin, serializers.ModelSerializ
         fields = [
             'id', 'job', 'job_detail', 'status', 'resume', 'resume_title',
             'resume_detail', 'cover_letters',
-            'application_form_url',
+            'application_form_url', 'form_fields',
             'applied_at', 'follow_up_at', 'outcome', 'notes',
             'contact_name', 'contact_email', 'events', 'artifacts',
             'created_at', 'updated_at',
         ]
         read_only_fields = ['events', 'artifacts', 'created_at', 'updated_at']
+
+    def validate_form_fields(self, value):
+        from .domain.application_fields import merge_fields
+        # A full UI save replaces definitions; preserve draft metadata for unchanged answers.
+        from .domain.application_fields import validate_fields
+        validated = validate_fields(value)
+        old = {f['id']: f for f in getattr(self.instance, 'form_fields', [])}
+        result = merge_fields([], validated)
+        for field in result:
+            previous = old.get(field['id'], {})
+            if all(previous.get(k) == field.get(k) for k in ['label', 'type', 'options', 'max_length', 'answer']):
+                field.update(status=previous.get('status', 'needs_input'), note=previous.get('note', ''))
+        return result
 
     def get_cover_letters(self, obj):
         """Expose every version connected to the application's job.

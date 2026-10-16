@@ -1,8 +1,7 @@
 import { CommonModule } from '@angular/common';
-import { AfterViewInit, Component, ElementRef, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, takeUntil } from 'rxjs';
-import { DiscoveryFlow } from './discovery-flow';
 import { ApiService, JobSource, SourceRun } from '../services/api.service';
 import { RealtimeService } from '../services/realtime.service';
 
@@ -40,11 +39,12 @@ import { RealtimeService } from '../services/realtime.service';
       </section>
 
       <section class="panel run-visual" *ngIf="activeRun || latestRun">
-        <div class="panel-head"><div><h2>{{ activeRun ? 'Discovery in progress' : 'Discovery run' }}</h2><p>{{ activeRun ? 'Follow each decision as it happens.' : runSummary(latestRun!) }}</p></div><button class="btn-secondary" type="button" (click)="replayFlow()" [disabled]="!!activeRun || !(latestRun?.discovered_count)">Replay animation</button></div>
+        <div class="panel-head"><div><h2>{{ activeRun ? 'Discovery in progress' : 'Discovery run' }}</h2><p>{{ activeRun ? 'Follow each decision as it happens.' : runSummary(latestRun!) }}</p></div></div>
         <div class="flow-header"><p><span>Queries</span><b>{{ searchCount() }}</b></p><p><span>Direct pages</span><b>{{ (activeRun || latestRun)?.discovered_count || 0 }}</b></p><p><span>Qualified</span><b>{{ shortlistedCount() }}</b></p><p><span>Imported</span><b>{{ (activeRun || latestRun)?.imported_count || 0 }}</b></p></div>
-        <p class="flow-status" aria-live="polite"><span class="activity-dot" *ngIf="activeRun"></span>{{ activeRun ? 'Live · ' + currentStep() : 'Recorded run · Replay shows how pages moved through the checks.' }}</p>
-        <div #flowHost class="discovery-flow"></div>
-        <p class="flow-note">Circles show {{ ((activeRun || latestRun)?.discovered_count || 0) > 120 ? 'a sample of up to 120 pages' : 'individual pages' }}. Saved includes new imports and refreshed opportunities. Not imported includes filtered pages and errors.</p>
+        <p class="flow-status" aria-live="polite">{{ activeRun ? currentStep() : runSummary(latestRun!) }}</p>
+        <ol class="stage-progress" aria-label="Discovery stages">
+          <li *ngFor="let stage of stages; let i = index" [class.reached]="i <= stageIndex()" [attr.aria-current]="activeRun && i === stageIndex() ? 'step' : null">{{ stage }}</li>
+        </ol>
         <p class="flow-note" *ngIf="!activeRun && !latestRun?.discovered_count">No direct job pages were found in this run.</p>
         <p class="run-outcome" *ngIf="!activeRun">{{ outcomeSummary() }}</p>
         <details class="rejection-details" *ngIf="rejectedEvents().length">
@@ -81,17 +81,17 @@ import { RealtimeService } from '../services/realtime.service';
     .schedule-grid .wide { grid-column: 1 / -1; }
     .run-visual { margin-bottom: 1.25rem; overflow: hidden; }
     .run-outcome { padding:.8rem; background:#f6f8f5; border-radius:.6rem; font-size:.88rem; }.rejection-details { margin:1rem 0; font-size:.85rem; }.rejection-details summary { cursor:pointer; font-weight:600; }.rejection-row { padding:.75rem 0; border-bottom:1px solid #e2e9e4; }.rejection-row a { color:#285f4a; }.rejection-row span { margin-left:.7rem; color:#67786f; }.rejection-row p { margin:.3rem 0 0; color:#67786f; }
-    .flow-status { display:flex; gap:.5rem; align-items:center; font-size:.85rem; color:#425f50; }.flow-note { font-size:.75rem; color:#67786f; margin:.65rem 0; }.activity-dot { width:8px; height:8px; border-radius:50%; background:#36a978; animation:search-pulse 1.2s ease-in-out infinite; } @keyframes search-pulse { 50% { opacity:.35; box-shadow:0 0 0 5px #36a97820; } } @media (prefers-reduced-motion: reduce) { .activity-dot { animation:none; } }
+    .flow-status { display:flex; gap:.5rem; align-items:center; font-size:.85rem; color:#425f50; }.flow-note { font-size:.75rem; color:#67786f; margin:.65rem 0; }
     .threshold-control { display:flex; align-items:center; gap:.6rem; }.threshold-control input { flex:1; }.threshold-control output { min-width:2.3rem; font-weight:700; color:#2d6b57; }
-    .flow-header { display:grid; grid-template-columns:repeat(4, 1fr); gap:.55rem; margin:1rem 0 .6rem; }.flow-header p { display:flex; flex-direction:column; gap:.12rem; margin:0; padding:.55rem .7rem; border:1px solid #e4ebe7; border-radius:.65rem; background:#fbfdfb; color:#62736c; font-size:.73rem; }.flow-header b { color:#1e6046; font-size:1.12rem; }.discovery-flow { height:300px; min-height:300px; overflow:hidden; border:1px solid #e1ebe5; border-radius:.85rem; background:linear-gradient(110deg, #f8fcfa 0%, #f3faf6 49%, #edf8f2 100%); position:relative; }
+    .flow-header { display:grid; grid-template-columns:repeat(4, 1fr); gap:.55rem; margin:1rem 0 .6rem; }.flow-header p { display:flex; flex-direction:column; gap:.12rem; margin:0; padding:.55rem .7rem; border:1px solid #e4ebe7; border-radius:.65rem; background:#fbfdfb; color:#62736c; font-size:.73rem; }.flow-header b { color:#1e6046; font-size:1.12rem; }
+    .stage-progress { display:flex; gap:6px; padding:0; list-style:none; margin:16px 0; }.stage-progress li { flex:1; border-top:5px solid #dce4e0; padding-top:8px; color:#65756d; font-size:12px; }.stage-progress li.reached { border-color:#26836b; color:#185b48; }
     .candidate-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:.5rem; margin:.8rem 0; }.candidate-list div { display:grid; grid-template-columns:24px 1fr auto; align-items:center; gap:.45rem; padding:.45rem .55rem; border:1px solid #e3e8ed; border-radius:.45rem; }.candidate-list span { color:#2d6b57; font-weight:700; }.candidate-list p { margin:0; font-size:.78rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }.candidate-list b { color:#2d6b57; }
     .event-stream { border-left: 2px solid #dce8e2; padding-left: .85rem; max-height: 145px; overflow: auto; }
     .event-stream p { margin: .4rem 0; font-size: .88rem; }.event-stream span { color: #2d6b57; }
-    @media (max-width: 650px) { .schedule-grid { grid-template-columns: 1fr; }.flow-header { grid-template-columns:repeat(2, 1fr); } .discovery-flow { height:340px; } }
+    @media (max-width: 650px) { .schedule-grid { grid-template-columns: 1fr; }.flow-header { grid-template-columns:repeat(2, 1fr); }  }
   `],
 })
-export class SourcesComponent implements OnInit, AfterViewInit, OnDestroy {
-  @ViewChild('flowHost') flowHost?: ElementRef<HTMLDivElement>;
+export class SourcesComponent implements OnInit, OnDestroy {
   sources: JobSource[] = [];
   runs: SourceRun[] = [];
   latestRun?: SourceRun;
@@ -107,13 +107,11 @@ export class SourcesComponent implements OnInit, AfterViewInit, OnDestroy {
   runningSourceIds = new Set<number>();
   private eventSub?: Subscription;
   private runPoll?: ReturnType<typeof setTimeout>;
-  private flow?: DiscoveryFlow;
-  private renderTimer?: ReturnType<typeof setTimeout>;
   private destroyed = false;
   private destroy$ = new Subject<void>();
   private watchedRunId?: number;
 
-  constructor(private api: ApiService, private realtime: RealtimeService, private zone: NgZone) {}
+  constructor(private api: ApiService, private realtime: RealtimeService) {}
 
   ngOnInit(): void {
     this.load();
@@ -126,7 +124,6 @@ export class SourcesComponent implements OnInit, AfterViewInit, OnDestroy {
           if (sequence !== log.length + 1) return; // The polling snapshot fills gaps.
           this.activeRun = { ...this.activeRun, ...(event.counts || {}), log: [...log, event.event] };
           this.latestRun = this.activeRun;
-          this.scheduleFlowRender();
         }
       }
       if (event.type === 'source_run_finished') {
@@ -138,13 +135,10 @@ export class SourcesComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
-  ngAfterViewInit(): void { this.scheduleFlowRender(); }
 
   ngOnDestroy(): void {
     this.destroyed = true; this.destroy$.next(); this.destroy$.complete(); this.eventSub?.unsubscribe();
     if (this.runPoll) clearTimeout(this.runPoll);
-    if (this.renderTimer) clearTimeout(this.renderTimer);
-    this.flow?.destroy();
   }
 
   load(): void {
@@ -165,9 +159,8 @@ export class SourcesComponent implements OnInit, AfterViewInit, OnDestroy {
       this.activeRun = running;
       // A manual run starts with zero counters. Always replace that optimistic
       // response with the server's newest persisted run after loading, or the
-      // visual will keep displaying the queued zeroes after completion.
+      // summary will keep displaying the queued zeroes after completion.
       if (this.runs.length) this.latestRun = this.runs[0];
-      this.scheduleFlowRender();
       if (running && this.watchedRunId !== running.id) this.watchRun(running.id);
     });
   }
@@ -189,7 +182,7 @@ export class SourcesComponent implements OnInit, AfterViewInit, OnDestroy {
     source.last_status = 'queued';
     source.last_message = 'Discovery refresh queued.';
     this.api.runSource(source.id).subscribe({
-      next: (run) => { this.activeRun = run; this.latestRun = run; this.message = `${source.name} is refreshing in the background. You can leave this page.`; this.scheduleFlowRender(false, true); this.watchRun(run.id); },
+      next: (run) => { this.activeRun = run; this.latestRun = run; this.message = `${source.name} is refreshing in the background. You can leave this page.`; this.watchRun(run.id); },
       error: () => { source.last_status = 'failed'; this.runningSourceIds.delete(source.id); this.runningSourceIds = new Set(this.runningSourceIds); this.message = `${source.name} could not be refreshed.`; },
     });
   }
@@ -210,7 +203,6 @@ export class SourcesComponent implements OnInit, AfterViewInit, OnDestroy {
         this.latestRun = run;
         if (['queued', 'running'].includes(run.status)) {
           this.activeRun = run;
-          this.scheduleFlowRender();
           this.runPoll = setTimeout(() => this.watchRun(runId), 1500);
           return;
         }
@@ -219,7 +211,6 @@ export class SourcesComponent implements OnInit, AfterViewInit, OnDestroy {
         this.runningSourceIds.clear();
         this.runningSourceIds = new Set();
         this.message = `Source refresh finished: ${run.imported_count} new, ${run.updated_count} refreshed.`;
-        this.scheduleFlowRender();
         this.load();
       },
       error: () => { this.runPoll = setTimeout(() => this.watchRun(runId), 3000); },
@@ -253,25 +244,16 @@ export class SourcesComponent implements OnInit, AfterViewInit, OnDestroy {
     return summary?.message || 'No pages passed this run’s checks. Older runs did not save individual rejection reasons.';
   }
   currentStep(): string { return this.recentEvents()[0]?.message || 'Waiting for search results…'; }
-  viewRun(run: SourceRun): void { this.latestRun = run; this.scheduleFlowRender(true, true); }
-  replayFlow(): void { this.scheduleFlowRender(true, true); }
-
-  private scheduleFlowRender(replay = false, scroll = false): void {
-    if (this.destroyed) return;
-    if (this.renderTimer) clearTimeout(this.renderTimer);
-    this.renderTimer = setTimeout(() => {
-      this.renderFlow(replay);
-      if (scroll) this.flowHost?.nativeElement.closest('section')?.scrollIntoView({behavior: 'smooth', block: 'center'});
-    });
-  }
-  private renderFlow(replay = false): void {
-    const host = this.flowHost?.nativeElement;
+  viewRun(run: SourceRun): void { this.latestRun = run; }
+  stages = ['Search', 'Check fit', 'Save', 'Finished'];
+  stageIndex(): number {
     const run = this.activeRun || this.latestRun;
-    if (!host || !run || this.destroyed) return;
-    this.zone.runOutsideAngular(() => {
-      this.flow ??= new DiscoveryFlow(host);
-      this.flow.update(run, replay);
-    });
+    if (!run || run.status === 'queued') return -1;
+    if (['succeeded', 'partial'].includes(run.status)) return 3;
+    const levels = (run.log || []).map(event => event.level);
+    if (levels.includes('import') || levels.includes('candidate') || levels.includes('evaluate')) return 2;
+    if (levels.includes('evaluating')) return 1;
+    return 0;
   }
   runSummary(run: SourceRun): string { return `${run.status} · ${run.discovered_count} identified · ${run.imported_count} new · ${run.updated_count} refreshed`; }
 }

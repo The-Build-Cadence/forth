@@ -701,6 +701,15 @@ class ApplicationViewSet(OwnedViewSet):
             publish_user_event(self.request.user.id, 'application_updated', {'application_id': application.id, 'status': application.status})
 
     @action(detail=True, methods=['post'])
+    def prepare_answers(self, request, pk=None):
+        from .domain.application_fields import prepare_answers, register_fields
+        application = self.get_object()
+        if 'fields' in request.data:
+            register_fields(application, request.data['fields'])
+        prepare_answers(application, discover=True)
+        return Response(ApplicationSerializer(application, context={'request': request}).data)
+
+    @action(detail=True, methods=['post'])
     def request_render(self, request, pk=None):
         from .domain.orchestration import default_thread
 

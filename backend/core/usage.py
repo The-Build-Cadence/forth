@@ -22,6 +22,12 @@ def usage_context(owner, origin='web', operation=''):
         _context.reset(token)
 
 
+def current_owner_id():
+    owner = (_context.get() or (None,))[0]
+    owner = owner() if callable(owner) else owner
+    return owner if isinstance(owner, int) else getattr(owner, 'pk', None)
+
+
 def metered_task(model=None, argument='owner_id'):
     """Resolve ownership from persisted records, including jobs launched by Beat."""
     def decorate(function):
@@ -52,7 +58,10 @@ def begin_request(provider, operation, model='', owner=None):
     owner_id = owner if isinstance(owner, int) else getattr(owner, 'pk', None)
     if not owner_id:
         raise ValueError('Provider requests require an account usage context.')
+    from .account_ai import account_config
+    config = account_config() if provider == 'openai' else None
     return ledger().create(owner_id=owner_id, provider=provider, operation=operation,
+                           credential_source='personal' if config and config.use_personal_ai else 'shared',
                            model=model, origin=origin, workflow=context_operation)
 
 

@@ -237,6 +237,9 @@ def prepare_application_materials(owner, job: JobPosting, *, application: Applic
         if application.status in {'saved', 'review', 'discovered', 'approved', 'preparing', 'resume_ready', 'materials_ready'}:
             application.status = 'materials_ready'
         application.save(update_fields=['resume', 'status', 'updated_at'])
+    if application:
+        from .application_fields import prepare_answers
+        prepare_answers(application)
     return {'resume': resume, 'cover_letter': cover_letter}
 
 

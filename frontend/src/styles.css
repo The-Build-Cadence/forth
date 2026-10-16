@@ -546,7 +546,7 @@ label {
   font-weight: 500;
 }
 
-input,
+input:not([type='checkbox']):not([type='radio']),
 select,
 textarea,
 .compact-input {
@@ -571,12 +571,38 @@ textarea {
   line-height: 1.5;
 }
 
-input:focus,
+input:not([type='checkbox']):not([type='radio']):focus,
 select:focus,
 textarea:focus {
   outline: none;
   border-color: #8a8ae7;
   box-shadow: 0 0 0 4px rgba(91, 91, 214, 0.1);
+}
+
+/* Keep native choice controls compact; only keyboard focus needs a ring. */
+input[type='checkbox'],
+input[type='radio'] {
+  inline-size: 18px;
+  block-size: 18px;
+  min-height: 0;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+  box-shadow: none;
+}
+
+input[type='checkbox']:focus-visible,
+input[type='radio']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+input[type='checkbox']:disabled,
+input[type='radio']:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .compact-input {

@@ -103,6 +103,24 @@ interface StatusDef {
             <span class="muted">{{ message }}</span>
         </div>
 
+        <section class="application-answers" aria-label="Application answers">
+          <div class="section-divider"><span>Application answers</span></div>
+          <p class="field-hint">Draft answers for this employer’s form, including role and company questions. Review every draft before copying it to the application. Files and consent still need your action.</p>
+          <fieldset [disabled]="preparingAnswers" style="border:0;padding:0;margin:0">
+            <div class="action-row"><input [(ngModel)]="newQuestion" placeholder="Add a question, e.g. Why this company?" aria-label="New application question"><button class="btn-secondary" type="button" (click)="addQuestion()" [disabled]="!newQuestion.trim()">Add question</button><button class="btn-primary" type="button" (click)="draftAnswers()" [disabled]="saving">{{ preparingAnswers ? 'Preparing answers…' : 'Find fields & draft missing answers' }}</button></div>
+            <p class="field-hint" *ngIf="!selected.form_fields?.length">No fields saved yet. Forth can read public forms; an MCP agent can supply fields from pages that require a browser.</p>
+            <label *ngFor="let field of selected.form_fields; let i = index" style="margin:16px 0">
+              {{ field.label }} {{ field.required ? '(required)' : '' }}
+              <select *ngIf="field.type === 'select' || field.type === 'checkbox'" [(ngModel)]="field.answer" [name]="'answer-' + i"><option value="">Choose…</option><option *ngFor="let option of (field.type === 'checkbox' ? ['Yes', 'No'] : field.options)" [value]="option">{{ option }}</option></select>
+              <textarea *ngIf="field.type !== 'select' && field.type !== 'checkbox' && field.type !== 'file'" rows="3" [(ngModel)]="field.answer" [name]="'answer-' + i" [attr.maxlength]="field.max_length"></textarea>
+              <small *ngIf="field.type === 'multiselect'">Available options: {{ field.options.join(', ') }}. Enter your choices on separate lines.</small>
+              <small>{{ field.status === 'draft' ? 'Draft · Review before submitting. ' : field.status === 'reviewed' ? 'Your answer. ' : '' }}{{ field.note }}</small>
+              <small *ngIf="field.max_length">{{ (field.answer || '').length }} / {{ field.max_length }} characters</small>
+            </label>
+          </fieldset>
+          <p class="field-hint">Use Save above to keep edited answers. Drafting saves the discovered fields and generated answers automatically.</p>
+        </section>
+
         <div class="section-divider"><span>Application materials</span></div>
         <section class="material-downloads" aria-label="Application materials">
           <article *ngIf="selected.resume_detail">
@@ -179,6 +197,8 @@ export class PipelineComponent implements OnInit, OnDestroy {
   message = '';
   saving = false;
   requestingRender = false;
+  newQuestion = '';
+  preparingAnswers = false;
   draggedApplicationId: number | null = null;
   dropTargetStatus: string | null = null;
   boardMessage = '';
@@ -392,10 +412,31 @@ export class PipelineComponent implements OnInit, OnDestroy {
     this.followUpLocal = this.selected.follow_up_at.slice(0, 16);
   }
 
+  addQuestion(): void {
+    if (!this.selected || !this.newQuestion.trim()) return;
+    this.selected.form_fields = [...(this.selected.form_fields || []), { id: 'question_' + crypto.randomUUID(), label: this.newQuestion.trim(), type: 'textarea', required: false, options: [], max_length: null, answer: '' }];
+    this.newQuestion = '';
+  }
+
+  draftAnswers(): void {
+    if (!this.selected || this.preparingAnswers) return;
+    const application = this.selected;
+    this.preparingAnswers = true;
+    this.api.updateApplication(application.id, {form_fields: application.form_fields || [], application_form_url: application.application_form_url}).subscribe({
+      next: () => this.api.prepareAnswers(application.id).subscribe({next: updated => {
+        if (this.selected?.id === application.id) this.selected.form_fields = updated.form_fields;
+        this.preparingAnswers = false;
+        this.message = updated.form_fields?.length ? 'Answers prepared. Review drafts and complete any fields needing your input.' : 'No public fields found. Open the application form, then add questions here or ask an MCP agent to supply them.';
+      }, error: () => { this.preparingAnswers = false; this.message = 'Could not prepare answers. Your saved fields are kept; try again.'; }}),
+      error: () => { this.preparingAnswers = false; this.message = 'Could not save fields. Check character limits and required labels.'; },
+    });
+  }
+
   saveSelected(): void {
     if (!this.selected) return;
     this.saving = true;
     const payload: Partial<ApplicationRecord> = {
+      form_fields: this.selected.form_fields || [],
       status: this.selected.status,
       notes: this.selected.notes,
       contact_name: this.selected.contact_name,

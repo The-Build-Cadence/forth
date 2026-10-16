@@ -10,7 +10,7 @@ import { AuthService } from '../services/auth.service';
   template: `
     <main class="auth-page">
       <section class="auth-story">
-        <div class="auth-brand"><span class="brand-mark">F</span><strong>Forth</strong></div>
+        <div class="auth-brand"><img class="brand-mark" src="/brand-mark.svg" alt="" width="40" height="40"><strong>Forth</strong></div>
         <div class="auth-story-copy">
           <p class="eyebrow">Your career, moving forward</p>
           <h1>Your next move, fully staffed.</h1>
@@ -24,7 +24,7 @@ import { AuthService } from '../services/auth.service';
         <p class="auth-footnote">Private by design · Your data stays in your workspace</p>
       </section>
       <section class="auth-panel">
-        <div class="mobile-auth-brand"><span class="brand-mark">F</span><strong>Forth</strong></div>
+        <div class="mobile-auth-brand"><img class="brand-mark" src="/brand-mark.svg" alt="" width="40" height="40"><strong>Forth</strong></div>
         <p class="eyebrow">Welcome back</p>
         <h2>Sign in to your workspace</h2>
         <p class="auth-subtitle">Pick up where you left off.</p>

@@ -16,7 +16,7 @@ import { OnboardingWizardComponent } from './onboarding/onboarding-wizard.compon
     <div class="app-shell" *ngIf="auth.hasSession(); else authOnly">
       <header class="mobile-header">
         <a class="mobile-brand" routerLink="/dashboard" (click)="closeNav()">
-          <span class="brand-mark">F</span>
+          <img class="brand-mark" src="/brand-mark.svg" alt="" width="40" height="40">
           <span>Forth</span>
         </a>
         <button class="menu-toggle" type="button" (click)="navOpen = !navOpen" [attr.aria-expanded]="navOpen" aria-label="Toggle navigation">
@@ -29,8 +29,8 @@ import { OnboardingWizardComponent } from './onboarding/onboarding-wizard.compon
       <aside class="side-nav" [class.open]="navOpen">
         <div class="side-nav-head">
           <a class="brand" routerLink="/dashboard" (click)="closeNav()">
-            <span class="brand-mark">F</span>
-            <span class="brand-copy"><strong>Forth</strong><small>Career OS</small></span>
+            <img class="brand-mark" src="/brand-mark.svg" alt="" width="40" height="40">
+            <span class="brand-copy"><strong>Forth</strong><small>Your next move</small></span>
           </a>
           <button class="nav-close" type="button" (click)="closeNav()" aria-label="Close navigation">×</button>
         </div>
@@ -46,9 +46,11 @@ import { OnboardingWizardComponent } from './onboarding/onboarding-wizard.compon
           <span class="nav-section-label nav-section-spaced">Knowledge & tools</span>
           <a routerLink="/profile" [class.active]="active('/profile')" [attr.aria-current]="active('/profile') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">◎</span>Candidate Profile</a>
           <a routerLink="/sources" [class.active]="active('/sources')" [attr.aria-current]="active('/sources') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">⌁</span>Sources</a>
+          <span class="nav-section-label nav-section-spaced">Account</span>
+          <a routerLink="/settings" [class.active]="active('/settings')" [attr.aria-current]="active('/settings') ? 'page' : null" (click)="closeNav()"><span class="nav-icon" aria-hidden="true">⚙</span>Settings</a>
         </nav>
 
-        <app-usage-indicator></app-usage-indicator>
+        <app-usage-indicator (selected)="closeNav()"></app-usage-indicator>
 
         <div class="side-nav-context">
           <div class="connection-row">
@@ -98,7 +100,7 @@ export class AppComponent implements OnInit, OnDestroy {
   ) {}
 
   ngOnInit(): void {
-    this.currentPath = this.router.url;
+    this.currentPath = this.router.url.split(/[?#]/)[0];
     this.authSub = this.auth.authed$.subscribe((authenticated) => {
       if (authenticated) {
         this.realtime.reconnect();
@@ -113,7 +115,7 @@ export class AppComponent implements OnInit, OnDestroy {
     });
     this.navSub = this.router.events.pipe(filter((event) => event instanceof NavigationEnd)).subscribe((event) => {
       const nav = event as NavigationEnd;
-      this.currentPath = nav.urlAfterRedirects || nav.url;
+      this.currentPath = (nav.urlAfterRedirects || nav.url).split(/[?#]/)[0];
       this.closeNav();
       if (this.auth.hasSession()) {
         this.realtime.connect();

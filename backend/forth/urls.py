@@ -8,6 +8,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from oauth2_provider.urls import base_urlpatterns, metadata_urlpatterns, management_urlpatterns
 from core.mcp_views import MCPView, OAuthLoginView
 from core.usage_views import UsageSummaryView
+from core.account_views import AccountSettingsView, AccountModelsView
 
 from core.views import (
     AgentRunViewSet,
@@ -61,6 +62,8 @@ urlpatterns = metadata_urlpatterns + [
     path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/signup/', RegistrationView.as_view(), name='signup'),
     path('api/auth/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('api/account/settings/', AccountSettingsView.as_view(), name='account-settings'),
+    path('api/account/models/', AccountModelsView.as_view(), name='account-models'),
     path('api/usage/', UsageSummaryView.as_view(), name='usage-summary'),
     path('api/dashboard/', DashboardView.as_view(), name='dashboard'),
     path('api/today/', TodayView.as_view(), name='today'),

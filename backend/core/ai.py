@@ -14,16 +14,17 @@ from django.conf import settings
 from .usage import openai_request
 
 
-_OPENAI_BACKOFF_UNTIL = 0.0
+_OPENAI_BACKOFF_UNTIL = {}
 
 
 def _openai_available() -> bool:
-    return time.monotonic() >= _OPENAI_BACKOFF_UNTIL
+    from .usage import current_owner_id
+    return time.monotonic() >= _OPENAI_BACKOFF_UNTIL.get(current_owner_id(), 0)
 
 
 def _back_off_openai() -> None:
-    global _OPENAI_BACKOFF_UNTIL
-    _OPENAI_BACKOFF_UNTIL = time.monotonic() + 60
+    from .usage import current_owner_id
+    _OPENAI_BACKOFF_UNTIL[current_owner_id()] = time.monotonic() + 60
 
 
 SKILL_HINTS = [
@@ -137,7 +138,11 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
 
 
 def openai_client():
-    api_key = getattr(settings, 'OPENAI_API_KEY', '') or os.environ.get('OPENAI_API_KEY', '')
+    from .account_ai import ai_credentials
+    try:
+        api_key, _, _, _ = ai_credentials()
+    except Exception:
+        return None
     if not api_key:
         return None
     try:
@@ -191,6 +196,7 @@ def embed_text(text: str) -> list[float]:
 
 
 def generate_json(system: str, user: str, schema: dict[str, Any] | None = None) -> AIResult | None:
+    from .account_ai import text_model, reasoning_options
     client = openai_client() if _openai_available() else None
     if not client:
         return None
@@ -204,7 +210,8 @@ def generate_json(system: str, user: str, schema: dict[str, Any] | None = None) 
                 'strict': True,
             }
         response = openai_request(client.responses.create, operation='text_generation',
-            model=getattr(settings, 'OPENAI_TEXT_MODEL', 'gpt-4.1-mini'),
+            model=text_model(),
+            **reasoning_options(),
             input=[
                 {'role': 'system', 'content': system},
                 {'role': 'user', 'content': user},
