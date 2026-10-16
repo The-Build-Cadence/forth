@@ -164,3 +164,60 @@ class ProfileImprovementApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(len(response.data['suggestions']), 1)
         self.assertIn('Python and Django', response.data['suggestions'][0]['proposed_statement'])
+
+    @patch('core.views.refresh_profile_search_task.delay')
+    @patch('core.domain.profile_improvements.generate_json', return_value=None)
+    def test_confirmed_gap_is_reviewed_then_persisted_as_user_evidence(self, generate_json, delay):
+        delay.return_value = SimpleNamespace(id='rescore')
+        match = self.job.match
+        match.missing_requirements = ['REST APIs']
+        match.supporting_facts = [{'fact_id': self.fact.id, 'title': self.fact.title, 'statement': self.fact.statement}]
+        match.save()
+        original = self.fact.statement
+        response = self.client.post(f'/api/jobs/{self.job.id}/profile_improvements/', {
+            'gap_links': [{'fact_id': self.fact.id, 'gap': 'REST APIs'}],
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        suggestion = response.data['suggestions'][0]
+        self.assertIn('REST APIs', suggestion['proposed_statement'])
+        self.fact.refresh_from_db()
+        self.assertEqual(self.fact.statement, original)
+        self.assertNotIn('REST APIs', self.fact.evidence_quote)
+        applied = self.client.post(f'/api/jobs/{self.job.id}/apply_profile_improvements/', {
+            'proposal_id': response.data['id'], 'accepted_suggestion_ids': [suggestion['id']],
+        }, format='json')
+        self.assertEqual(applied.status_code, 200)
+        self.fact.refresh_from_db()
+        self.assertIn('REST APIs', self.fact.statement)
+        self.assertIn('User-confirmed experience: REST APIs', self.fact.evidence_quote)
+        self.assertEqual(self.fact.metadata['wording_history'][-1]['confirmed_gaps'], ['REST APIs'])
+
+    @patch('core.domain.profile_improvements.generate_json')
+    def test_rejects_invalid_stale_and_foreign_gap_links_before_generation(self, generate_json):
+        other = get_user_model().objects.create_user(username='other-gap-user')
+        foreign = ProfileFact.objects.create(owner=other, title='Other evidence', statement='Private', verified_by_user=True)
+        match = self.job.match
+        match.missing_requirements = ['REST APIs']
+        match.supporting_facts = [{'fact_id': self.fact.id}, {'fact_id': foreign.id}]
+        match.save()
+        for links in ['bad', [None], [{'fact_id': self.fact.id, 'gap': 'Invented gap'}], [{'fact_id': foreign.id, 'gap': 'REST APIs'}]]:
+            response = self.client.post(f'/api/jobs/{self.job.id}/profile_improvements/', {'gap_links': links}, format='json')
+            self.assertEqual(response.status_code, 400)
+        generate_json.assert_not_called()
+
+    @patch('core.domain.profile_improvements.generate_json', return_value=None)
+    def test_rejecting_linked_gap_does_not_record_experience(self, generate_json):
+        match = self.job.match
+        match.missing_requirements = ['REST APIs']
+        match.supporting_facts = [{'fact_id': self.fact.id}]
+        match.save()
+        response = self.client.post(f'/api/jobs/{self.job.id}/profile_improvements/', {
+            'gap_links': [{'fact_id': self.fact.id, 'gap': 'REST APIs'}],
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.client.post(f'/api/jobs/{self.job.id}/apply_profile_improvements/', {
+            'proposal_id': response.data['id'], 'accepted_suggestion_ids': [],
+        }, format='json')
+        self.fact.refresh_from_db()
+        self.assertNotIn('REST APIs', self.fact.statement)
+        self.assertNotIn('REST APIs', self.fact.evidence_quote)

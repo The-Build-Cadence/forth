@@ -96,7 +96,7 @@ import { MatchRadarComponent } from '../components/match-radar.component';
 
           <div class="two-col detail-columns">
             <div><h3>Covered skills</h3><div class="chip-row"><span class="status-chip good" *ngFor="let skill of selected.match?.explanation_json?.covered_skills || []">{{ skill }}</span><span class="muted" *ngIf="!(selected.match?.explanation_json?.covered_skills || []).length">No covered skills identified.</span></div></div>
-            <div><h3>Visible gaps</h3><div class="chip-row"><span class="status-chip warn" *ngFor="let gap of selected.match?.missing_requirements || []">{{ gap }}</span><span class="muted" *ngIf="!(selected.match?.missing_requirements || []).length">No obvious skill gaps.</span></div></div>
+            <div><h3>Visible gaps</h3><div class="chip-row"><button type="button" class="status-chip warn gap-chip" *ngFor="let gap of selected.match?.missing_requirements || []" [class.chosen]="chosenGap === gap || draggedGap === gap" [attr.aria-pressed]="chosenGap === gap" [disabled]="proposingJobId !== null || applyingImprovements" draggable="false" (dragstart)="$event.preventDefault()" (pointerdown)="startGapDrag($event, gap)" (pointermove)="moveGapDrag($event)" (pointerup)="finishGapDrag($event)" (pointercancel)="cancelGapDrag()" (lostpointercapture)="cancelGapDrag()" (click)="chooseGap(gap)">{{ gap }}</button><span class="muted" *ngIf="!(selected.match?.missing_requirements || []).length">No obvious skill gaps.</span></div></div>
           </div>
 
           <div class="inferred-capabilities" *ngIf="(selected.match?.explanation_json?.inferred_capabilities || []).length">
@@ -106,15 +106,19 @@ import { MatchRadarComponent } from '../components/match-radar.component';
           </div>
 
           <h3>Evidence</h3>
-          <div class="list-row" *ngFor="let fact of selected.match?.supporting_facts || []">
+          <p class="field-hint">Already have a visible gap’s experience? Drag it onto the evidence where it belongs, or select a gap and use “Link selected gap”. Linking confirms this is part of your experience. Review the wording with Strengthen profile before applying.</p>
+          <p class="muted" *ngIf="!(selected.match?.supporting_facts || []).length">No supporting evidence yet. Add and verify your experience in <a routerLink="/profile">Candidate Profile</a>, then refresh this match.</p>
+          <div class="list-row gap-evidence" *ngFor="let fact of selected.match?.supporting_facts || []" [attr.data-gap-fact]="fact.verified === false ? null : fact.fact_id" [class.drop-active]="hoverFactId === fact.fact_id">
             <div>
               <strong>{{ fact.title }}</strong>
-              <p>{{ fact.statement }}</p>
+              <p>{{ fact.statement }}</p><p class="field-hint" *ngIf="fact.verified === false">Verify this evidence in <a routerLink="/profile">Candidate Profile</a> before linking experience.</p>
+              <div class="chip-row" *ngIf="linkedGaps(fact.fact_id).length"><span class="status-chip good" *ngFor="let gap of linkedGaps(fact.fact_id)">{{ gap }} <button type="button" [attr.aria-label]="'Remove ' + gap + ' from ' + fact.title" (click)="removeGap(fact.fact_id, gap)" [disabled]="proposingJobId !== null || applyingImprovements">×</button></span></div>
+              <button type="button" class="btn-secondary gap-link-button" *ngIf="chosenGap && fact.verified !== false" (click)="linkGap(fact.fact_id, chosenGap)" [disabled]="proposingJobId !== null || applyingImprovements">Link selected gap to {{ fact.title }}</button>
             </div>
           </div>
 
           <div class="profile-strengthener">
-            <div><strong>Close safe wording gaps in required capabilities</strong><p>Forth prioritizes verified evidence for this role’s requirements and can clarify implicit framework knowledge without inventing experience. Nothing changes until you review it.</p></div>
+            <div><strong>Make your relevant experience explicit</strong><p>Linked gaps are your confirmation of experience that was missing from the wording. Forth includes them in suggested edits. Nothing changes until you review and apply.</p></div>
             <button class="btn-secondary" type="button" (click)="proposeImprovements(selected)" [disabled]="proposingJobId !== null || applyingImprovements">
               <span class="spinner" *ngIf="proposingJobId === selected.id || applyingImprovements" aria-hidden="true"></span>{{ proposingJobId === selected.id ? 'Reviewing evidence…' : applyingImprovements ? 'Rescoring opportunities…' : '✦ Strengthen profile' }}
             </button>
@@ -151,7 +155,7 @@ import { MatchRadarComponent } from '../components/match-radar.component';
       <div class="modal-backdrop" *ngIf="improvementProposal" (click)="closeImprovementModal()">
         <section class="improvement-modal" role="dialog" aria-modal="true" aria-labelledby="improvement-title" (click)="$event.stopPropagation()">
           <div class="modal-head">
-            <div><p class="eyebrow">Profile strengthening agent</p><h2 id="improvement-title">Review suggested changes</h2><p>These edits reword verified evidence for {{ improvementProposal.job_title }}. They do not add new experience.</p></div>
+            <div><p class="eyebrow">Profile strengthening agent</p><h2 id="improvement-title">Review suggested changes</h2><p>These edits clarify your evidence for {{ improvementProposal.job_title }}, including any experience you confirmed by linking gaps. Check each statement before applying.</p></div>
             <button class="icon-button" type="button" aria-label="Close" (click)="closeImprovementModal()">×</button>
           </div>
 
@@ -214,6 +218,60 @@ export class MatchesComponent implements OnInit, OnDestroy {
   instructionsDirty = false;
   savingInstructions = false;
   markingApplied = false;
+  chosenGap = '';
+  draggedGap = '';
+  gapLinks: {fact_id: number; gap: string}[] = [];
+  hoverFactId: number | null = null;
+  private gapDrag?: {id: number; gap: string; element: HTMLElement; x: number; y: number; moved: boolean};
+  private suppressGapClick = false;
+
+  linkedGaps(factId: number): string[] { return this.gapLinks.filter(link => link.fact_id === factId).map(link => link.gap); }
+  chooseGap(gap: string): void { if (!this.suppressGapClick) this.chosenGap = this.chosenGap === gap ? '' : gap; }
+  linkGap(factId: number, gap: string): void {
+    if (this.proposingJobId !== null || this.applyingImprovements || !gap) return;
+    if (!this.linkedGaps(factId).includes(gap)) {
+      if (this.linkedGaps(factId).length >= 8 || new Set([...this.gapLinks.map(link => link.fact_id), factId]).size > 6) {
+        this.message = 'Link up to eight gaps per evidence box and six boxes at a time.'; return;
+      }
+      this.gapLinks = [...this.gapLinks, {fact_id: factId, gap}];
+    }
+    this.chosenGap = '';
+    this.message = 'Experience linked. Click Strengthen profile to review the proposed wording.';
+  }
+  removeGap(factId: number, gap: string): void { this.gapLinks = this.gapLinks.filter(link => link.fact_id !== factId || link.gap !== gap); }
+  startGapDrag(event: PointerEvent, gap: string): void {
+    if (!event.isPrimary || event.button !== 0 || this.proposingJobId !== null || this.applyingImprovements) return;
+    const element = event.currentTarget as HTMLElement;
+    this.gapDrag = {id: event.pointerId, gap, element, x: event.clientX, y: event.clientY, moved: false};
+    element.setPointerCapture(event.pointerId);
+  }
+  moveGapDrag(event: PointerEvent): void {
+    const drag = this.gapDrag;
+    if (!drag || drag.id !== event.pointerId) return;
+    if (Math.hypot(event.clientX - drag.x, event.clientY - drag.y) > 6) drag.moved = true;
+    if (!drag.moved) return;
+    this.draggedGap = drag.gap;
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-gap-fact]');
+    this.hoverFactId = target ? Number(target.getAttribute('data-gap-fact')) : null;
+    if (event.clientY > window.innerHeight - 70) window.scrollBy(0, 18);
+    else if (event.clientY < 70) window.scrollBy(0, -18);
+  }
+  finishGapDrag(event: PointerEvent): void {
+    const drag = this.gapDrag;
+    if (!drag || drag.id !== event.pointerId) return;
+    if (drag.moved) {
+      const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-gap-fact]');
+      if (target) this.linkGap(Number(target.getAttribute('data-gap-fact')), drag.gap);
+      else this.chosenGap = drag.gap;
+      this.suppressGapClick = true;
+      setTimeout(() => this.suppressGapClick = false, 0);
+    }
+    this.cancelGapDrag();
+  }
+  cancelGapDrag(): void {
+    const drag = this.gapDrag; this.gapDrag = undefined; this.hoverFactId = null; this.draggedGap = '';
+    if (drag?.element.hasPointerCapture(drag.id)) drag.element.releasePointerCapture(drag.id);
+  }
 
   constructor(private api: ApiService, private route: ActivatedRoute, private realtime: RealtimeService) {}
 
@@ -251,7 +309,7 @@ export class MatchesComponent implements OnInit, OnDestroy {
     });
   }
 
-  ngOnDestroy(): void { this.eventSub?.unsubscribe(); clearInterval(this.poll); }
+  ngOnDestroy(): void { this.cancelGapDrag(); this.eventSub?.unsubscribe(); clearInterval(this.poll); }
 
   load(): void {
     const params: Record<string, string> = {};
@@ -276,7 +334,7 @@ export class MatchesComponent implements OnInit, OnDestroy {
 
   select(job: JobPosting): void {
     const changed = this.selected?.id !== job.id;
-    if (changed) this.instructionsDirty = false;
+    if (changed) { this.instructionsDirty = false; this.gapLinks = []; this.chosenGap = ''; this.cancelGapDrag(); }
     this.selected = job;
     this.api.job(job.id).subscribe({
       next: (detail) => {
@@ -369,14 +427,14 @@ export class MatchesComponent implements OnInit, OnDestroy {
     if (this.proposingJobId || this.applyingImprovements) return;
     this.proposingJobId = job.id;
     this.message = 'The profile agent is comparing your verified evidence with this role.';
-    this.api.proposeProfileImprovements(job.id).subscribe({
+    this.api.proposeProfileImprovements(job.id, this.gapLinks).subscribe({
       next: (proposal) => {
         this.proposingJobId = null;
         this.improvementProposal = proposal;
         this.acceptedSuggestionIds = new Set(proposal.suggestions.map((suggestion) => suggestion.id));
         this.message = proposal.suggestions.length ? 'Review the proposed profile changes.' : 'No safe wording changes were found.';
       },
-      error: () => { this.proposingJobId = null; this.message = 'Could not generate profile improvements.'; },
+      error: (error) => { this.proposingJobId = null; this.message = error?.error?.detail || 'Could not generate profile improvements.'; },
     });
   }
 
@@ -409,6 +467,7 @@ export class MatchesComponent implements OnInit, OnDestroy {
     const proposal = this.improvementProposal;
     this.api.applyProfileImprovements(proposal.job, proposal.id, [...this.acceptedSuggestionIds]).subscribe({
       next: (result) => {
+        this.gapLinks = []; this.chosenGap = '';
         this.message = 'Profile changes applied. Recalculating every opportunity with fresh embeddings…';
         this.improvementProposal = undefined;
         if (result.rescore_mode === 'sync' || result.rescore_mode === 'not_needed') {

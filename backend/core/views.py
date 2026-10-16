@@ -417,7 +417,10 @@ class JobPostingViewSet(OwnedViewSet):
         from .domain.profile_improvements import propose_profile_improvements
 
         job = self.get_object()
-        proposal = propose_profile_improvements(job)
+        try:
+            proposal = propose_profile_improvements(job, request.data.get('gap_links', []))
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         publish_user_event(request.user.id, 'profile_improvements_ready', {
             'job_id': job.id,
             'proposal_id': proposal.id,

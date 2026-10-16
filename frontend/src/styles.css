@@ -2280,3 +2280,13 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 @media (max-width: 680px) { .opportunity-actions > div { grid-template-columns: 1fr; gap: 8px; } }
 .opportunity-instructions > label { display: flex; align-items: center; gap: 10px; }
 .opportunity-instructions > label input[type=checkbox] { flex: 0 0 18px; width: 18px; height: 18px; margin: 0; }
+
+/* Gap links use pointer events, avoiding native drag interference in Chrome. */
+.gap-chip { cursor: grab; touch-action: none; user-select: none; font: inherit; font-size: .75rem; }
+.gap-chip:active { cursor: grabbing; }
+.gap-chip.chosen { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gap-evidence { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 10px; }
+.gap-evidence.drop-active { border-color: var(--accent); background: var(--accent-soft); }
+.gap-evidence > div { width: 100%; }
+.gap-evidence .status-chip button { border: 0; background: transparent; color: inherit; padding: 2px 6px; cursor: pointer; font: inherit; }
+.gap-link-button { margin-top: 12px; }

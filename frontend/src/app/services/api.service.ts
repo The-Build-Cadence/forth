@@ -443,8 +443,8 @@ export class ApiService {
     return this.http.post(`${environment.apiBaseUrl}/jobs/${id}/recompute_match/`, {});
   }
 
-  proposeProfileImprovements(jobId: number): Observable<ProfileImprovementProposal> {
-    return this.http.post<ProfileImprovementProposal>(`${environment.apiBaseUrl}/jobs/${jobId}/profile_improvements/`, {});
+  proposeProfileImprovements(jobId: number, gapLinks: {fact_id: number; gap: string}[] = []): Observable<ProfileImprovementProposal> {
+    return this.http.post<ProfileImprovementProposal>(`${environment.apiBaseUrl}/jobs/${jobId}/profile_improvements/`, {gap_links: gapLinks});
   }
 
   applyProfileImprovements(jobId: number, proposalId: number, acceptedSuggestionIds: string[]): Observable<any> {

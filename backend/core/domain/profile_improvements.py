@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import re
+from copy import copy
 import uuid
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from core.ai import clean_text, generate_json
@@ -132,13 +134,44 @@ def _validated_suggestions(
     return suggestions
 
 
-def propose_profile_improvements(job: JobPosting) -> ProfileImprovementProposal:
+def propose_profile_improvements(job: JobPosting, gap_links=None) -> ProfileImprovementProposal:
     match = getattr(job, 'match', None) or recompute_match(job)
     facts = list(
         matching_facts(job.owner)
-        .filter(verified_by_user=True)
+        .filter(Q(verified_by_user=True) | Q(lifecycle='verified'))
         .order_by('-confidence', 'fact_type', 'id')[:80]
     )
+    # Linking a visible gap is an explicit user assertion about this evidence.
+    # Keep it in the proposal until the user accepts; never mutate a fact here.
+    if gap_links is None:
+        gap_links = []
+    if not isinstance(gap_links, list) or len(gap_links) > 48:
+        raise ValueError('Provide at most 48 gap links.')
+    confirmed = {}
+    visible_gaps = set(match.missing_requirements)
+    supporting_ids = {item.get('fact_id') for item in match.supporting_facts}
+    for link in gap_links:
+        if not isinstance(link, dict) or type(link.get('fact_id')) is not int or not isinstance(link.get('gap'), str):
+            raise ValueError('Each gap link needs a fact_id and gap.')
+        fact_id, gap = link['fact_id'], link['gap']
+        if gap not in visible_gaps or fact_id not in supporting_ids:
+            raise ValueError('The gap or evidence has changed. Refresh the opportunity and link it again.')
+        confirmed.setdefault(fact_id, [])
+        if gap not in confirmed[fact_id]:
+            confirmed[fact_id].append(gap)
+    if len(confirmed) > 6 or any(len(gaps) > 8 for gaps in confirmed.values()):
+        raise ValueError('Link up to eight gaps per evidence box and six boxes at a time.')
+    linked_facts = list(matching_facts(job.owner).filter(Q(verified_by_user=True) | Q(lifecycle='verified'), pk__in=confirmed))
+    if len(linked_facts) != len(confirmed):
+        raise ValueError('Only your current verified evidence can be strengthened.')
+    facts = linked_facts + [fact for fact in facts if fact.id not in confirmed]
+    originals = {fact.id: fact.statement for fact in facts}
+    grounded_facts = []
+    for fact in facts:
+        grounded = copy(fact)
+        if fact.id in confirmed:
+            grounded.evidence_quote += '\nUser-confirmed experience: ' + '; '.join(confirmed[fact.id])
+        grounded_facts.append(grounded)
     fact_payload = [
         {
             'id': fact.id,
@@ -147,7 +180,7 @@ def propose_profile_improvements(job: JobPosting) -> ProfileImprovementProposal:
             'statement': fact.statement,
             'source_evidence': fact.evidence_quote,
         }
-        for fact in facts
+        for fact in grounded_facts
     ]
     generated = generate_json(
         (
@@ -167,6 +200,7 @@ def propose_profile_improvements(job: JobPosting) -> ProfileImprovementProposal:
             f'Partially credited inferred capabilities (make wording explicit only when safe): '
             f'{match.explanation_json.get("inferred_capabilities", [])}\n'
             f'Current supporting evidence: {match.supporting_facts[:16]}\n\n'
+            f'User-confirmed missing experience, tied to evidence IDs: {confirmed}\n'
             f'Verified facts available to reword:\n{fact_payload}'
         ),
         PROPOSAL_SCHEMA,
@@ -174,7 +208,30 @@ def propose_profile_improvements(job: JobPosting) -> ProfileImprovementProposal:
     raw_suggestions = generated.data.get('suggestions', []) if generated else []
     if not raw_suggestions:
         raw_suggestions = _fallback_suggestions(facts, match.supporting_facts)
-    suggestions = _validated_suggestions(raw_suggestions, facts)
+    # Always include each explicitly linked capability, even without a model.
+    # Do not invent responsibilities, duration, metrics, or outcomes around it.
+    validated_generated = _validated_suggestions(raw_suggestions, grounded_facts)
+    linked_suggestions = []
+    for fact in linked_facts:
+        gaps = confirmed[fact.id]
+        generated_match = next((item for item in validated_generated if item['fact_id'] == fact.id
+                                and all(_contains(item['proposed_statement'], gap) for gap in gaps)), None)
+        proposed = fact.statement + '\nAdditional experience: ' + '; '.join(gaps) + '.'
+        if len(proposed) > 3000:
+            raise ValueError('This evidence is too long to include the linked gaps. Shorten it in Candidate Profile first.')
+        linked_suggestions.append({
+            'fact_id': fact.id,
+            'proposed_statement': generated_match['proposed_statement'] if generated_match else proposed,
+            'rationale': 'You confirmed these capabilities belong to this evidence. Review before applying.',
+            'target_requirements': gaps,
+        })
+    suggestions = _validated_suggestions(
+        linked_suggestions + [item for item in raw_suggestions if item.get('fact_id') not in confirmed],
+        grounded_facts,
+    )
+    for suggestion in suggestions:
+        suggestion['current_statement'] = originals[suggestion['fact_id']]
+        suggestion['confirmed_gaps'] = confirmed.get(suggestion['fact_id'], [])
 
     ProfileImprovementProposal.objects.filter(
         owner=job.owner, job=job, status='pending',
@@ -200,7 +257,8 @@ def apply_profile_improvements(
 
     for suggestion in accepted:
         fact = ProfileFact.objects.select_for_update().filter(
-            owner=proposal.owner, pk=suggestion.get('fact_id'), verified_by_user=True,
+            Q(verified_by_user=True) | Q(lifecycle='verified'),
+            owner=proposal.owner, pk=suggestion.get('fact_id'),
         ).first()
         if not fact:
             continue
@@ -213,9 +271,13 @@ def apply_profile_improvements(
             'proposal_id': proposal.id,
             'changed_at': timezone.now().isoformat(),
         })
+        confirmations = suggestion.get('confirmed_gaps', [])
+        if confirmations:
+            fact.evidence_quote += '\nUser-confirmed experience: ' + '; '.join(confirmations)
+            history[-1]['confirmed_gaps'] = confirmations
         fact.statement = suggestion['proposed_statement']
         fact.metadata = {**fact.metadata, 'wording_history': history[-20:]}
-        fact.save(update_fields=['statement', 'metadata', 'updated_at'])
+        fact.save(update_fields=['statement', 'evidence_quote', 'metadata', 'updated_at'])
         applied_fact_ids.append(fact.id)
 
     proposal.status = 'applied' if applied_fact_ids else 'rejected'
