@@ -91,6 +91,7 @@ class MaterialPreferencesTests(TestCase):
         self.assertEqual(self.job.materials_status, 'failed')
 
     def test_generation_endpoint_deduplicates_pending_request(self):
+        ProfileDocument.objects.create(owner=self.user, kind="resume", status="ready", raw_text="Platform engineering experience")
         with patch('core.views.regenerate_application_materials_task.delay') as task:
             task.return_value.id = 'test-task'
             for _ in range(2):

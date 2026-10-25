@@ -73,7 +73,7 @@ DATABASES = {
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 12}},
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
@@ -223,3 +223,22 @@ BRAVE_COST_PER_1000_REQUESTS = os.environ.get('BRAVE_COST_PER_1000_REQUESTS', '5
 DATABASES['usage'] = deepcopy(DATABASES['default'])
 DATABASES['usage']['ATOMIC_REQUESTS'] = False
 DATABASES['usage']['TEST'] = {'MIRROR': 'default'}
+
+# Account recovery uses the canonical public origin, never a request Host header.
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.environ.get('EMAIL_HOST', '')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', '1') == '1'
+EMAIL_TIMEOUT = 15
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Forth <noreply@localhost>')
+PASSWORD_RESET_TIMEOUT = 3600
+SIMPLE_JWT = {'CHECK_REVOKE_TOKEN': True}
+REST_FRAMEWORK['DEFAULT_THROTTLE_CLASSES'] = ['rest_framework.throttling.AnonRateThrottle', 'rest_framework.throttling.UserRateThrottle']
+REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {'anon': '60/min', 'user': '600/min', 'recovery': '10/hour', 'signup': '10/hour'}
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'same-origin'
+SECURE_HSTS_SECONDS = int(os.environ.get('SECURE_HSTS_SECONDS', '0'))
+
+FORTH_BETA_INVITE_CODE = os.environ.get('FORTH_BETA_INVITE_CODE', '')

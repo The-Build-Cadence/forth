@@ -22,10 +22,40 @@ x-backend-env: &backend_env
   # Beat checks due sources every 15 minutes; each source's own schedule_minutes
   # controls whether it is actually queued.
   SOURCE_REFRESH_INTERVAL_SECONDS: ${SOURCE_REFRESH_INTERVAL_SECONDS:-900}
+  FORTH_BETA_INVITE_CODE: ${FORTH_BETA_INVITE_CODE:-}
+  EMAIL_HOST: ${EMAIL_HOST:-}
+  EMAIL_PORT: ${EMAIL_PORT:-587}
+  EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+  EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+  EMAIL_USE_TLS: ${EMAIL_USE_TLS:-1}
+  DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-noreply@localhost}
+  SECURE_HSTS_SECONDS: ${SECURE_HSTS_SECONDS:-0}
   BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+
+x-sandbox: &sandbox
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 256
+  mem_limit: 1g
+  memswap_limit: 1g
+  cpus: 1.0
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+x-app-sandbox: &app_sandbox
+  <<: *sandbox
+  user: "10001:10001"
+  cap_drop: [ALL]
+  read_only: true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=512m,mode=1777
 
 services:
   db:
+    <<: *sandbox
+    networks: [storage]
     image: pgvector/pgvector:pg16
     environment:
       POSTGRES_DB: job_seeker
@@ -41,6 +71,8 @@ services:
     restart: unless-stopped
 
   redis:
+    <<: *sandbox
+    networks: [storage]
     image: redis:7-alpine
     command: ["redis-server", "--save", "60 1", "--appendonly", "no"]
     volumes:
@@ -53,9 +85,11 @@ services:
     restart: unless-stopped
 
   web:
+    <<: *app_sandbox
     build:
       context: .
     image: forth:latest
+    networks: [default, storage, rendering]
     depends_on:
       db:
         condition: service_healthy
@@ -76,7 +110,9 @@ services:
     restart: unless-stopped
 
   worker:
+    <<: *app_sandbox
     image: forth:latest
+    networks: [default, storage, rendering]
     depends_on:
       db:
         condition: service_healthy
@@ -96,7 +132,9 @@ services:
     restart: unless-stopped
 
   beat:
+    <<: *app_sandbox
     image: forth:latest
+    networks: [default, storage, rendering]
     depends_on:
       db:
         condition: service_healthy
@@ -116,7 +154,10 @@ services:
   # Started on demand by an MCP client with `docker compose run --rm -i mcp`.
   # It deliberately has no network listener: MCP traffic is stdin/stdout only.
   mcp:
+    profiles: [tools]
+    <<: *app_sandbox
     image: forth:latest
+    networks: [default, storage, rendering]
     depends_on:
       db:
         condition: service_healthy
@@ -136,21 +177,57 @@ services:
     stdin_open: true
 
   nginx:
-    image: nginx:1.27-alpine
+    <<: *sandbox
+    user: "101:101"
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,size=64m,mode=1777
+      - /var/run:rw,noexec,nosuid,size=8m,mode=1777
+      - /tmp:rw,noexec,nosuid,size=32m,mode=1777
+    image: nginx:stable-alpine@sha256:970364228b1e4f932abc22d321932816782cca8a20b85a77552a7cfe9acfb3b5
     depends_on:
       web:
         condition: service_started
     ports:
-      - "8021:80"
+      - "127.0.0.1:8021:80"
     volumes:
       - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./data:/app/data:ro
     restart: unless-stopped
 
   gotenberg:
+    <<: *sandbox
     image: gotenberg/gotenberg:8
-    command: ["gotenberg", "--api-timeout=60s", "--chromium-auto-start=true"]
+    environment:
+      HOME: /tmp
+      XDG_CONFIG_HOME: /tmp/.config
+      XDG_CACHE_HOME: /tmp/.cache
+    networks: [rendering]
+    cap_drop: [ALL]
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,size=512m,mode=1777
+    command:
+      - gotenberg
+      - --api-timeout=60s
+      - --chromium-auto-start=true
+      - --chromium-disable-javascript=true
+      - --chromium-deny-private-ips=true
+      - --chromium-deny-public-ips=true
+      - --api-download-from-deny-private-ips=true
+      - --api-download-from-deny-public-ips=true
+      - --webhook-deny-private-ips=true
+      - --webhook-deny-public-ips=true
+      - --libreoffice-disable-routes=true
     restart: unless-stopped
+
+networks:
+  storage:
+    internal: true
+  rendering:
+    internal: true
 
 volumes:
   db_data:
@@ -160,4 +237,4 @@ volumes:
 
 secrets:
   openai_api_key:
-    environment: OPENAI_API_KEY
+    file: ./.secrets/openai_api_key

@@ -126,7 +126,7 @@ class DiscoveryEvidenceTests(SimpleTestCase):
     def test_redirect_to_closed_board_is_rejected(self):
         response = MagicMock(status_code=302, is_redirect=True, headers={'Location': '/acme?error=true'})
         response.__enter__.return_value = response
-        with patch('core.domain.sourcing.validate_public_url'), patch('core.domain.sourcing.requests.get', return_value=response):
+        with patch('core.domain.sourcing.validate_public_url'), patch('core.domain.sourcing.public_get', return_value=response):
             self.assertEqual(_verify_job_page(self.record())[0], 'closed')
 
     def test_structured_eligibility_overrides_incidental_country_mentions(self):
@@ -153,7 +153,7 @@ class DiscoveryEvidenceTests(SimpleTestCase):
         employer.iter_content.return_value = [b'<html>Engineering Manager, software team, Remote Canada</html>']
         record = self.record()
         record.source_url = 'https://repost.example/job/12345-engineering-manager'
-        with patch('core.domain.sourcing.validate_public_url'), patch('core.domain.sourcing.requests.get', side_effect=[repost, redirect, employer]):
+        with patch('core.domain.sourcing.validate_public_url'), patch('core.domain.sourcing.public_get', side_effect=[repost, redirect, employer]):
             self.assertIsNone(_verify_job_page(record))
         self.assertEqual(record.source_url, 'https://acme.careers/job?gh_jid=12345')
         self.assertEqual(record.application_url, record.source_url)
@@ -165,7 +165,7 @@ class DiscoveryEvidenceTests(SimpleTestCase):
         response.iter_content.return_value = [b'<html>Engineering Manager, remote Canada</html>']
         record = self.record()
         record.source_url = 'https://repost.example/job/12345-engineering-manager'
-        with patch('core.domain.sourcing.validate_public_url'), patch('core.domain.sourcing.requests.get', return_value=response):
+        with patch('core.domain.sourcing.validate_public_url'), patch('core.domain.sourcing.public_get', return_value=response):
             self.assertEqual(_verify_job_page(record)[0], 'employer_unverified')
 
     def test_structured_page_recovers_missing_search_snippet(self):
@@ -173,7 +173,7 @@ class DiscoveryEvidenceTests(SimpleTestCase):
         response.__enter__.return_value = response
         response.iter_content.return_value = [b'''<script type="application/ld+json">{"@type":"JobPosting","title":"Engineering Manager","description":"Lead software developers building reliable backend services in a distributed team.","jobLocationType":"TELECOMMUTE","applicantLocationRequirements":{"@type":"Country","name":"Canada"},"hiringOrganization":{"name":"Example"}}</script>''']
         record = self.record(snippet='You need to enable JavaScript to run this app')
-        with patch('core.domain.sourcing.validate_public_url'), patch('core.domain.sourcing.requests.get', return_value=response):
+        with patch('core.domain.sourcing.validate_public_url'), patch('core.domain.sourcing.public_get', return_value=response):
             self.assertIsNone(_verify_job_page(record))
         self.assertTrue(cheap_assessment(self.profile, record)['eligible'])
         self.assertEqual(record.company, 'Example')

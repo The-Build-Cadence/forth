@@ -173,6 +173,8 @@ def refresh_enabled_sources_task() -> dict:
 
     queued = 0
     for source in JobSource.objects.filter(enabled=True, kind='brave').iterator():
+        if SourceRun.objects.filter(source=source, status__in=['queued', 'running']).exists():
+            continue
         minutes = max(15, min(10080, int((source.config or {}).get('schedule_minutes') or 360)))
         if source.last_run_at and source.last_run_at > timezone.now() - timedelta(minutes=minutes):
             continue

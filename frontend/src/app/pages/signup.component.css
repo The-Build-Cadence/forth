@@ -2,7 +2,7 @@
 .signup-story { background: radial-gradient(circle at 80% 15%,rgba(201,244,90,.15),transparent 18rem),radial-gradient(circle at 8% 90%,rgba(120,229,220,.13),transparent 22rem),linear-gradient(150deg,#0b3027,#10251f); }
 .signup-story-copy { max-width: 610px; margin: auto 0; }
 .signup-story-copy > .eyebrow { color: #78e5dc; }
-.signup-story-copy h1 { margin: 12px 0 18px; color: #fff; font-size: clamp(2.35rem,5vw,4.2rem); line-height: 1.02; }
+.signup-story-copy h2 { margin: 12px 0 18px; color: #fff; font-size: clamp(2.35rem,5vw,4.2rem); line-height: 1.02; }
 .signup-story-copy > p:not(.eyebrow) { max-width: 560px; color: #aec2bb; font-size: 1rem; line-height: 1.65; }
 .signup-journey { display: grid; grid-template-columns: auto 1px auto 1px auto; align-items: start; gap: 14px; margin-top: 42px; }
 .signup-journey > div { display: grid; grid-template-columns: 30px 1fr; gap: 10px; min-width: 0; }
@@ -15,10 +15,13 @@
 .signup-field { margin-bottom: 16px; }.signup-field > label { margin-bottom: 7px; }
 .password-field { position: relative; display: block; }.password-field input { padding-right: 60px; }.password-field button { position: absolute; top: 50%; right: 8px; padding: 6px 7px; border: 0; color: var(--accent); background: transparent; font-size: .66rem; font-weight: 800; transform: translateY(-50%); }
 .password-strength { display: flex; align-items: center; gap: 9px; margin: -6px 0 9px; }.password-strength i { flex: 1; height: 4px; overflow: hidden; border-radius: 99px; background: #e8ecea; }.password-strength b { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg,#efb742,#8bd953,#1a9d81); transition: width .2s; }.password-strength span { color: var(--muted); font-size: .61rem; }
-.password-rules { display: flex; flex-wrap: wrap; gap: 5px 12px; margin: -3px 0 14px; }.password-rules span { color: #9aa49f; font-size: .61rem; }.password-rules span.met { color: #16846d; }
+.password-rules { display: flex; flex-wrap: wrap; gap: 5px 12px; margin: -3px 0 14px; }.password-rules span { color: #52645c; font-size: .75rem; }.password-rules span.met { color: #106854; }
 .signup-submit { min-height: 47px; }.signup-error { margin-bottom: 0; }.field-error { display: block; margin-top: 4px; color: var(--failed); font-size: .62rem; }
 .signup-privacy { margin: -3px 0 0; color: var(--muted); font-size: .64rem; text-align: center; }
 .auth-switch { margin: 20px 0 0; color: var(--muted); font-size: .72rem; text-align: center; }.auth-switch a { color: var(--accent); font-weight: 800; text-decoration: none; }
 @media(max-width:1100px){.signup-journey{grid-template-columns:1fr;gap:9px}.signup-journey>i{display:none}}
 @media(max-width:960px){.signup-panel{width:min(470px,calc(100% - 28px))}}
-@media(max-width:520px){.signup-panel{padding:22px}.signup-panel h2{font-size:1.42rem}.signup-page{background:#fff}.password-rules{display:grid;grid-template-columns:1fr 1fr}.password-rules span:last-child{grid-column:1/-1}}
+@media(max-width:520px){.signup-panel{padding:22px}.signup-panel h1{font-size:1.42rem}.signup-page{background:#fff}.password-rules{display:grid;grid-template-columns:1fr 1fr}.password-rules span:last-child{grid-column:1/-1}}
+
+.signup-panel h1 { margin-bottom:12px; font-size:1.7rem; line-height:1.2; }
+@media(max-width:520px) { .signup-panel h1 { font-size:1.42rem; } }

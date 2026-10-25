@@ -9,8 +9,10 @@ test('resume evidence drives a dynamic interview into an actionable candidate pr
   await page.getByLabel('Password', { exact: true }).fill('Build-My-Career-Profile-2026');
   await page.getByLabel('Confirm password').fill('Build-My-Career-Profile-2026');
   await page.getByRole('button', { name: /Create workspace/ }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
+  await expect(page).toHaveURL(/\/start$/);
 
+  await page.goto('/profile');
+  await page.getByRole('button', {name: 'Review my experience'}).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'Meet your Profile Steward' })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('adaptive-onboarding-welcome.png'), fullPage: true });
@@ -66,7 +68,10 @@ test('resume evidence drives a dynamic interview into an actionable candidate pr
       await skip.click();
     } else if (await card.locator('.dynamic-choices').isVisible().catch(() => false)) {
       const preferred = preferredChoices[target];
-      const option = preferred ? card.getByRole('button', { name: preferred }).first() : card.locator('.dynamic-choices button').first();
+      const preferredOption = preferred ? card.getByRole('button', { name: preferred }).first() : undefined;
+      // The interview plans choices dynamically; use a preferred answer only
+      // when it was actually offered rather than waiting on a fixed script.
+      const option = preferredOption && await preferredOption.count() ? preferredOption : card.locator('.dynamic-choices button').first();
       if (!((await option.getAttribute('class')) || '').includes('selected')) await option.click();
       await card.getByRole('button', { name: /Save & continue/ }).click();
     } else {
@@ -77,6 +82,7 @@ test('resume evidence drives a dynamic interview into an actionable candidate pr
     await expect(dialog.locator(`.dynamic-answer[data-question-id="${questionId}"]`)).toBeHidden({ timeout: 120_000 });
     if (turn === 0) {
       await page.reload();
+      await page.getByRole('button', {name: 'Review my experience'}).click();
       await expect(dialog.locator('.dynamic-answer')).toBeVisible({ timeout: 120_000 });
       await expect(dialog.locator(`.dynamic-answer[data-question-target="${target}"]`)).toHaveCount(0);
     }

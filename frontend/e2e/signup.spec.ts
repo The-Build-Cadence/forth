@@ -4,13 +4,13 @@ test('signup is responsive and clearly leads into profile onboarding', async ({ 
   await page.goto('/signup');
   await expect(page).toHaveTitle(/Forth/);
   await expect(page.getByRole('heading', { name: 'Let’s get your search moving' })).toBeVisible();
-  await expect(page.getByText(/your Profile Steward will build your candidate profile/i)).toBeVisible();
+  await expect(page.getByText(/add your resume and confirm a few search preferences/i)).toBeVisible();
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(1);
   await page.screenshot({ path: testInfo.outputPath('signup.png'), fullPage: true });
 });
 
-test('new account is authenticated and handed directly to Profile Steward', async ({ page }, testInfo) => {
+test('new account is authenticated and handed directly to short setup', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== 'desktop', 'Account creation is covered once; responsive signup rendering runs on every project.');
   const email = `candidate.${Date.now()}@example.com`;
   const password = 'Move-Forth-Securely-2026';
@@ -23,10 +23,8 @@ test('new account is authenticated and handed directly to Profile Steward', asyn
   await page.getByRole('button', { name: /Create workspace/ }).click();
   expect((await registration).status()).toBe(201);
 
-  await expect(page).toHaveURL(/\/dashboard$/);
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole('heading', { name: 'Meet your Profile Steward' })).toBeVisible();
+  await expect(page).toHaveURL(/\/start$/);
+  await expect(page.getByRole('heading', { name: 'What would you like to do first?' })).toBeVisible();
   expect(await page.evaluate(() => Boolean(localStorage.getItem('forth_access') && localStorage.getItem('forth_refresh')))).toBeTruthy();
 });
 

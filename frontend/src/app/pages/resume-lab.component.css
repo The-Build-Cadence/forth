@@ -123,3 +123,4 @@
 .designer-controls input[type=color] { padding: 5px; }
 .designed-resume-preview { display: block; width: 100%; height: 1056px; border: 0; background: white; }
 @media (max-width: 600px) { .resume-designer { margin: 12px; } .designed-resume-preview { height: 800px; } }
+.resume-designer summary { cursor: pointer; padding: .9rem; font-weight: 600; }

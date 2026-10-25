@@ -27,6 +27,7 @@ test('spider chart shows actual scores, axis details, updates, and missing data'
     return route.fulfill({ json: detail ? jobs.find(item => item.id === Number(detail[1])) : { count: jobs.length, results: jobs } });
   });
   await page.goto('/matches');
+  await page.getByText('Why this match? View skills and evidence', {exact:true}).click();
   const chart = page.locator('app-match-radar');
   await expect(chart.getByRole('group')).toHaveAccessibleName('Match dimension spider chart for Platform Engineer');
   await expect(chart.locator('.radar-axis')).toHaveCount(6);

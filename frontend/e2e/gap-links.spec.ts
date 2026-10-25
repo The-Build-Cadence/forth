@@ -16,6 +16,7 @@ test('gaps can be dragged or selected, removed, and sent for review', async ({ p
     return route.fulfill({json:{count:0,results:[]}});
   });
   await page.goto('/matches?job=7');
+  await page.getByText('Why this match? View skills and evidence', {exact:true}).click();
   const gap = page.getByRole('button',{name:'REST APIs',exact:true});
   const evidence = page.locator('[data-gap-fact="12"]');
   await gap.scrollIntoViewIfNeeded();

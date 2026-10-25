@@ -6,12 +6,11 @@ import { AuthService } from './services/auth.service';
 import { RealtimeService, RealtimeStatus } from './services/realtime.service';
 import { ApiService } from './services/api.service';
 import { UsageIndicatorComponent } from './usage-indicator.component';
-import { OnboardingWizardComponent } from './onboarding/onboarding-wizard.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, OnboardingWizardComponent, UsageIndicatorComponent],
+  imports: [CommonModule, RouterOutlet, RouterLink, UsageIndicatorComponent],
   template: `
     <div class="app-shell" *ngIf="auth.hasSession(); else authOnly">
       <header class="mobile-header">
@@ -37,15 +36,15 @@ import { OnboardingWizardComponent } from './onboarding/onboarding-wizard.compon
 
         <nav class="side-nav-main" aria-label="Primary">
           <span class="nav-section-label">Your search</span>
-          <a routerLink="/dashboard" [class.active]="active('/dashboard')" [attr.aria-current]="active('/dashboard') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">⌂</span>Today</a>
-          <a routerLink="/concierge" [class.active]="active('/concierge')" [attr.aria-current]="active('/concierge') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">✦</span>Concierge</a>
-          <a routerLink="/matches" [class.active]="active('/matches')" [attr.aria-current]="active('/matches') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">◇</span>Opportunities</a>
-          <a routerLink="/pipeline" [class.active]="active('/pipeline')" [attr.aria-current]="active('/pipeline') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">▦</span>Applications</a>
-          <a routerLink="/resume-lab" [class.active]="active('/resume-lab')" [attr.aria-current]="active('/resume-lab') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">▤</span>Resume Studio</a>
+          <a routerLink="/dashboard" [class.active]="active('/dashboard')" [attr.aria-current]="active('/dashboard') ? 'page' : null" (click)="closeNav()"><span class="nav-icon" aria-hidden="true">⌂</span>Today</a>
+          <a routerLink="/matches" [class.active]="active('/matches')" [attr.aria-current]="active('/matches') ? 'page' : null" (click)="closeNav()"><span class="nav-icon" aria-hidden="true">◇</span>Jobs</a>
+          <a routerLink="/pipeline" [class.active]="active('/pipeline')" [attr.aria-current]="active('/pipeline') ? 'page' : null" (click)="closeNav()"><span class="nav-icon" aria-hidden="true">▦</span>Applications</a>
 
-          <span class="nav-section-label nav-section-spaced">Knowledge & tools</span>
-          <a routerLink="/profile" [class.active]="active('/profile')" [attr.aria-current]="active('/profile') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">◎</span>Candidate Profile</a>
-          <a routerLink="/sources" [class.active]="active('/sources')" [attr.aria-current]="active('/sources') ? 'page' : null" (click)="closeNav()"><span class="nav-icon">⌁</span>Sources</a>
+          <a routerLink="/profile" [class.active]="active('/profile')" [attr.aria-current]="active('/profile') ? 'page' : null" (click)="closeNav()"><span class="nav-icon" aria-hidden="true">◎</span>My Profile</a>
+          <span class="nav-section-label nav-section-spaced">Tools</span>
+          <a routerLink="/concierge" [class.active]="active('/concierge')" [attr.aria-current]="active('/concierge') ? 'page' : null" (click)="closeNav()"><span class="nav-icon" aria-hidden="true">✦</span>Ask Forth</a>
+          <a routerLink="/resume-lab" [class.active]="active('/resume-lab')" [attr.aria-current]="active('/resume-lab') ? 'page' : null" (click)="closeNav()"><span class="nav-icon" aria-hidden="true">▤</span>Documents</a>
+          <a routerLink="/sources" [class.active]="active('/sources')" [attr.aria-current]="active('/sources') ? 'page' : null" (click)="closeNav()"><span class="nav-icon" aria-hidden="true">⌁</span>Job search settings</a>
           <span class="nav-section-label nav-section-spaced">Account</span>
           <a routerLink="/settings" [class.active]="active('/settings')" [attr.aria-current]="active('/settings') ? 'page' : null" (click)="closeNav()"><span class="nav-icon" aria-hidden="true">⚙</span>Settings</a>
         </nav>
@@ -62,7 +61,8 @@ import { OnboardingWizardComponent } from './onboarding/onboarding-wizard.compon
         <button class="btn-secondary side-nav-logout" type="button" (click)="logout()"><span>↪</span> Sign out</button>
       </aside>
 
-      <main class="app-main">
+      <a class="skip-link" href="#main-content">Skip to content</a>
+      <main class="app-main" id="main-content">
         <router-outlet></router-outlet>
       </main>
 
@@ -70,8 +70,6 @@ import { OnboardingWizardComponent } from './onboarding/onboarding-wizard.compon
         <span class="spinner" aria-hidden="true"></span>
         <div><strong>{{ activeWork[0] }}</strong><small>{{ activeWork.length > 1 ? (activeWork.length - 1) + ' more background task' + (activeWork.length > 2 ? 's' : '') + ' running' : 'You can keep using Forth while this finishes.' }}</small></div>
       </div>
-
-      <app-onboarding-wizard *ngIf="showOnboarding" (closed)="closeOnboarding()"></app-onboarding-wizard>
     </div>
 
     <ng-template #authOnly>
@@ -85,7 +83,6 @@ export class AppComponent implements OnInit, OnDestroy {
   latestEvent = 'No events yet';
   navOpen = false;
   activeWork: string[] = [];
-  showOnboarding = false;
   private work = new Map<string, string>();
   private navSub?: Subscription;
   private authSub?: Subscription;
@@ -107,7 +104,6 @@ export class AppComponent implements OnInit, OnDestroy {
         this.checkOnboarding();
       } else {
         this.realtime.disconnect();
-        this.showOnboarding = false;
         this.work.clear();
         this.activeWork = [];
         this.latestEvent = '';
@@ -138,6 +134,7 @@ export class AppComponent implements OnInit, OnDestroy {
   }
 
   active(path: string): boolean {
+    if (path === '/matches' && this.currentPath.startsWith('/jobs/')) return true;
     return this.currentPath === path || this.currentPath.startsWith(`${path}/`);
   }
 
@@ -151,21 +148,18 @@ export class AppComponent implements OnInit, OnDestroy {
     this.router.navigate(['/login']);
   }
 
-  closeOnboarding(): void {
-    this.showOnboarding = false;
-  }
-
   private checkOnboarding(): void {
     if (sessionStorage.getItem('forth_onboarding_dismissed') === '1') return;
     const session = this.auth.getRefreshToken();
-    this.api.onboarding().subscribe({
+    this.api.searchSetup().subscribe({
       next: (snapshot) => {
         if (this.auth.getRefreshToken() !== session) return;
-        // The request may have started before the candidate dismissed another
-        // in-flight wizard instance. Never let a late response reopen it.
-        this.showOnboarding = sessionStorage.getItem('forth_onboarding_dismissed') !== '1' && snapshot.needs_onboarding;
+        // Setup is a page, so users can leave, return and use browser navigation.
+        // Existing users keep their current destination.
+        if (!snapshot.profile) return;
+        if (!snapshot.profile.onboarding_completed_at && !snapshot.profile.onboarding_state?.quick_start && !snapshot.profile.onboarding_state?.setup_draft && !snapshot.document && this.router.url === '/dashboard') this.router.navigate(['/start']);
       },
-      error: () => this.showOnboarding = false,
+      error: () => { /* Dashboard offers a retry without blocking navigation. */ },
     });
   }
 

@@ -6,6 +6,7 @@ async function setup(page: Page, failSave = false) {
   await page.addInitScript(() => { localStorage.setItem('forth_access', 'drag-test'); sessionStorage.setItem('forth_onboarding_dismissed', '1'); });
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path === '/api/jobs/7/') return route.fulfill({json: {...app.job_detail, application: {id: 1, status: app.status}, document_status: 'not_created'}});
     if (path === '/api/usage/') return route.fulfill({ status: 503, json: {} });
     if (path === '/api/applications/1/') {
       if (route.request().method() === 'PATCH') {
@@ -33,14 +34,14 @@ test('moving an application persists status and leaves the board usable', async 
   const errors: string[] = [];
   page.on('pageerror', error => errors.push(error.message));
   const changes = await setup(page);
-  await moveCard(page, 'Approved');
-  await expect(page.getByRole('status')).toContainText('moved to Approved');
-  expect(changes).toEqual(['approved']);
+  await moveCard(page, 'Preparing');
+  await expect(page.getByRole('status')).toContainText('moved to Preparing');
+  expect(changes).toEqual(['preparing']);
   await moveCard(page, 'Saved');
   await expect(page.getByRole('status')).toContainText('moved to Saved');
-  expect(changes).toEqual(['approved', 'saved']);
+  expect(changes).toEqual(['preparing', 'saved']);
   await page.locator('.application-card').click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page).toHaveURL(/\/jobs\/7/);
   expect(errors).toEqual([]);
 });
 
@@ -67,8 +68,8 @@ test('Escape, focus loss, and pointer cancellation release the drag without savi
     await expect(page.getByRole('dialog')).toHaveCount(0);
     await expect(page.locator('.pipeline-col.drop-target')).toHaveCount(0);
     await page.locator('.application-card').click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    await page.getByRole('button', { name: 'Close application workspace' }).click();
+    await expect(page).toHaveURL(/\/jobs\/7/);
+    await page.goto('/pipeline');
   }
   expect(changes).toEqual([]);
 });
@@ -80,18 +81,19 @@ test('dropping outside the board cancels, and failed saves restore the card', as
   await page.mouse.up();
   await expect(page.locator('.application-drag-preview')).toHaveCount(0);
   expect(changes).toEqual([]);
-  await moveCard(page, 'Approved');
+  await moveCard(page, 'Preparing');
   await expect(page.getByRole('status')).toContainText('Could not save');
   const saved = page.locator('.pipeline-col').filter({ has: page.getByRole('heading', { name: 'Saved', exact: true }) });
   await expect(saved.locator('.application-card')).toBeEnabled();
-  await moveCard(page, 'Approved');
+  await moveCard(page, 'Preparing');
   await expect(page.getByRole('status')).toContainText('Could not save');
-  expect(changes).toEqual(['approved', 'approved']);
+  expect(changes).toEqual(['preparing', 'preparing']);
   await page.locator('.application-card').click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page).toHaveURL(/\/jobs\/7/);
 });
 
 test('dragging near the viewport edge scrolls to lower stages', async ({ page }) => {
+  await page.setViewportSize({width: 820, height: 600});
   await setup(page);
   await beginDrag(page);
   const before = await page.evaluate(() => window.scrollY);
@@ -110,7 +112,7 @@ test('touch dragging uses the handle and saves the destination', async ({ page, 
   const sourceBox = (await source.boundingBox())!;
   await page.evaluate(top => window.scrollBy({ top, behavior: 'instant' }), sourceBox.y - 180);
   const handle = (await source.locator('.card-drag-handle').boundingBox())!;
-  const target = (await page.locator('.pipeline-col').filter({ has: page.getByRole('heading', { name: 'Approved', exact: true }) }).boundingBox())!;
+  const target = (await page.locator('.pipeline-col').filter({ has: page.getByRole('heading', { name: 'Preparing', exact: true }) }).boundingBox())!;
   const client = await page.context().newCDPSession(page);
   const start = { x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 };
   const end = { x: target.x + 60, y: target.y + 50 };
@@ -120,23 +122,23 @@ test('touch dragging uses the handle and saves the destination', async ({ page, 
   }
   await expect(page.locator('.application-drag-preview')).toBeVisible();
   await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await expect(page.getByRole('status')).toContainText('moved to Approved');
-  expect(changes).toEqual(['approved']);
+  await expect(page.getByRole('status')).toContainText('moved to Preparing');
+  expect(changes).toEqual(['preparing']);
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
 test('a stalled save times out and unlocks the board', async ({ page }) => {
-  await page.clock.install();
   await setup(page);
+  await page.clock.install();
   await page.route('**/api/applications/1/', async route => {
     if (route.request().method() !== 'PATCH') await route.fallback();
     // Leave PATCH pending to exercise an unresponsive server.
   });
-  await moveCard(page, 'Approved');
+  await moveCard(page, 'Preparing');
   await expect(page.locator('.application-card')).toBeDisabled();
   await page.clock.fastForward(15001);
   await expect(page.getByRole('status')).toContainText('Saving took too long');
   await expect(page.locator('.application-card')).toBeEnabled();
   await page.locator('.application-card').click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page).toHaveURL(/\/jobs\/7/);
 });

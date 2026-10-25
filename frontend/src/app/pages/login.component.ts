@@ -40,6 +40,7 @@ import { AuthService } from '../services/auth.service';
           <button class="btn-primary auth-submit" type="submit" [disabled]="loading">{{ loading ? 'Signing in…' : 'Sign in' }}</button>
           <p class="error" *ngIf="error">{{ error }}</p>
         </form>
+        <p><a routerLink="/forgot-password">Forgot your password?</a></p>
         <p class="auth-switch">New to Forth? <a routerLink="/signup">Create your workspace</a></p>
       </section>
     </main>

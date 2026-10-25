@@ -1,0 +1,77 @@
+<section class="page job-workspace">
+  <a routerLink="/matches" class="text-link">← All jobs</a>
+  <p *ngIf="loading" role="status">Loading job workspace…</p>
+  <p *ngIf="error" role="alert">{{ error }}</p>
+  <ng-container *ngIf="job && !error">
+    <header class="page-head">
+      <div><p class="eyebrow">Job workspace</p><h1>{{ job.title }}</h1><p>{{ job.company || 'Company not listed' }} · {{ job.location || 'Location not listed' }}</p></div>
+      <a routerLink="/pipeline" class="btn-secondary">My applications</a>
+    </header>
+    <section class="panel next-step" aria-label="Your next step">
+      <div class="journey-status"><span class="status-chip">{{ application ? stageLabel(application.status) : 'Not saved' }}</span><span class="status-chip">Documents: {{ documentLabel }}</span><span class="status-chip warn" *ngIf="followUpDue">Follow-up due</span></div>
+      <ol class="journey" aria-label="Application journey">
+        <li [class.done]="!!application">Save job</li><li [class.done]="!!job.has_materials">Prepare documents</li><li [class.done]="job.document_status === 'reviewed'">Review documents</li><li [class.done]="submitted">Apply on employer site</li><li [class.done]="submitted">Track outcome</li>
+      </ol>
+      <div class="action-row">
+        <a *ngIf="nextAction === 'Apply on employer site ↗'; else actionButton" class="btn-primary" [href]="employerUrl" target="_blank" rel="noopener noreferrer" (click)="employerOpened = true">Apply on employer site ↗</a>
+        <ng-template #actionButton><button class="btn-primary" type="button" (click)="act()" [disabled]="primaryDisabled">{{ saving ? 'Saving…' : nextAction }}</button></ng-template>
+        <button class="text-button" type="button" *ngIf="!submitted && stage !== 'archived'" (click)="openSubmission()" [disabled]="saving || loading">{{ employerOpened ? 'Mark as applied' : 'I already applied' }}</button>
+        <details *ngIf="application"><summary>More actions</summary><div class="secondary-actions"><button class="btn-secondary" type="button" (click)="prepare()" [disabled]="busy || instructionsDirty">{{ job.has_materials ? 'Generate new document versions' : 'Prepare documents' }}</button><button class="btn-secondary" type="button" (click)="changeTab('tracking')">Manage progress & reminders</button></div></details>
+      </div>
+      <p class="field-hint">Saving and preparing documents do not submit an application. Submit on the employer’s site, then record it here.</p>
+      <p class="field-hint" *ngIf="instructionsDirty">Save your writing preferences before preparing documents.</p>
+      <p class="field-hint" *ngIf="job.document_status === 'failed'">The last generation failed or timed out. Previous versions remain available below.</p>
+    </section>
+    <p class="feedback-banner" role="status" aria-live="polite" *ngIf="message">{{ message }}</p>
+    <form class="panel submission" *ngIf="submissionOpen" (ngSubmit)="recordSubmission()">
+      <h2>Record your submission</h2><p>Confirm that you submitted this application to the employer. This only updates your tracker.</p>
+      <label>Submitted on<input type="datetime-local" name="appliedDate" [(ngModel)]="appliedDraft" required></label>
+      <div class="action-row"><button class="btn-primary" type="submit" [disabled]="saving || !appliedDraft">Confirm submission</button><button class="btn-secondary" type="button" (click)="submissionOpen = false">Cancel</button></div>
+    </form>
+    <nav class="tabs" aria-label="Job workspace sections"><button *ngFor="let item of tabs" type="button" [class.active]="tab === item.key" [attr.aria-current]="tab === item.key ? 'page' : null" (click)="changeTab(item.key)">{{ item.label }}</button></nav>
+    <app-job-overview *ngIf="tab === 'overview'" [embeddedJobId]="job.id" />
+    <section *ngIf="tab === 'documents'" aria-label="Documents for this job">
+      <details class="panel"><summary>Writing preferences for this job</summary>
+        <label><input type="checkbox" [(ngModel)]="overrideInstructions" (ngModelChange)="instructionsDirty = true">Use custom writing instructions</label>
+        <p>New versions use your account defaults unless you override them here. Existing versions stay unchanged.</p>
+        <label *ngIf="overrideInstructions">Writing instructions<textarea rows="4" maxlength="6000" [(ngModel)]="instructions" (ngModelChange)="instructionsDirty = true"></textarea></label>
+        <button class="btn-secondary" type="button" (click)="saveInstructions()" [disabled]="saving || !instructionsDirty">Save writing preferences</button>
+      </details>
+      <p *ngIf="job.document_status === 'generating'" role="status">Generating your resume and cover letter… Progress is saved if you leave.</p>
+      <section class="panel" *ngIf="!job.has_materials && job.document_status !== 'generating'"><h2>No documents yet</h2><p>Use {{ application ? 'Prepare documents' : 'Save job, then Prepare documents' }} above to create a tailored resume and cover letter. You can also apply using your own documents.</p><a routerLink="/profile">Manage your career experience</a></section>
+      <app-job-documents *ngIf="job.has_materials" [embeddedJobId]="job.id" (documentsChanged)="refresh()" />
+      <details class="panel" *ngIf="application?.artifacts?.length"><summary>Previously exported files</summary><div class="action-row" *ngFor="let artifact of application!.artifacts"><span>{{ artifact.title }}</span><button class="btn-secondary" type="button" (click)="downloadArtifact(artifact)">Download saved file</button></div></details>
+    </section>
+    <section class="panel" *ngIf="tab === 'form' && !application"><h2>Employer form</h2><p>Save this job to keep the employer’s form link and draft answers here.</p></section>
+    <section class="panel" *ngIf="tab === 'form' && application" aria-label="Employer form and answers">
+      <h2>Apply on the employer’s site</h2><p>Download your documents from the Documents tab. Review your answers below, then copy them to the employer’s form. Upload files and submit there.</p>
+      <fieldset [disabled]="saving">
+        <label>Employer form link<input type="url" [(ngModel)]="application.application_form_url" (ngModelChange)="dirty = true" placeholder="https://company.example/apply"></label>
+        <div class="action-row"><a *ngIf="employerUrl" class="btn-secondary" [href]="employerUrl" target="_blank" rel="noopener noreferrer" (click)="employerOpened = true">Open employer form ↗</a><button class="btn-secondary" type="button" (click)="draftAnswers()" [disabled]="dirty">Draft missing answers</button></div>
+        <h3>Application answers</h3><p>Drafts need your review. Your saved answers are not sent to the employer automatically.</p>
+        <div class="action-row"><label>New question<input [(ngModel)]="newQuestion" placeholder="Why would you like to work here?"></label><button class="btn-secondary" type="button" (click)="addQuestion()" [disabled]="!newQuestion.trim()">Add question</button></div>
+        <label *ngFor="let field of application.form_fields || []; let index = index">{{ field.label }} {{ field.required ? '(required)' : '' }}
+          <select *ngIf="field.type === 'select' || field.type === 'checkbox'" [(ngModel)]="field.answer" (ngModelChange)="dirty = true" [name]="'answer-' + index"><option value="">Choose…</option><option *ngFor="let option of (field.type === 'checkbox' ? ['Yes', 'No'] : field.options)" [value]="option">{{ option }}</option></select>
+          <textarea *ngIf="field.type !== 'select' && field.type !== 'checkbox' && field.type !== 'file'" rows="3" [(ngModel)]="field.answer" (ngModelChange)="dirty = true" [attr.maxlength]="field.max_length" [name]="'answer-' + index"></textarea>
+          <small *ngIf="field.type === 'file'">Upload this file directly on the employer’s site.</small><small *ngIf="field.type === 'multiselect'">Choose from {{ field.options.join(', ') }}. Enter one choice per line.</small><small>{{ field.note }}</small>
+        </label>
+        <button class="btn-primary" type="button" (click)="saveTracking()" [disabled]="!dirty">Save form & answers</button>
+      </fieldset>
+    </section>
+    <section class="panel" *ngIf="tab === 'tracking' && !application"><h2>Track this job</h2><p>Save this job to track progress, contacts and reminders. If you have already submitted, choose “I already applied”.</p></section>
+    <section class="panel" *ngIf="tab === 'tracking' && application" aria-label="Application tracking">
+      <h2>Progress & reminders</h2><p *ngIf="application.applied_at">Submitted {{ application.applied_at | date:'medium' }}</p>
+      <p *ngIf="application.status !== stage">Recorded detail: {{ application.status.replaceAll('_', ' ') }}. This detail is preserved when you save without changing stage.</p>
+      <fieldset [disabled]="saving">
+        <div class="tracking-grid"><label>Application stage<select [(ngModel)]="stageDraft" (ngModelChange)="dirty = true"><option *ngFor="let item of stages" [value]="item.key" [disabled]="item.key === 'applied' && !application.applied_at">{{ item.label }}</option></select></label>
+          <label>Follow-up reminder<input type="datetime-local" [(ngModel)]="followUpDraft" (ngModelChange)="dirty = true"></label>
+          <label>Contact name<input [(ngModel)]="application.contact_name" (ngModelChange)="dirty = true"></label><label>Contact email<input type="email" [(ngModel)]="application.contact_email" (ngModelChange)="dirty = true"></label>
+        </div>
+        <label>Outcome or interview details<input [(ngModel)]="application.outcome" (ngModelChange)="dirty = true" maxlength="160" placeholder="e.g. Technical interview scheduled, declined offer, withdrawn"></label>
+        <label>Notes<textarea rows="5" [(ngModel)]="application.notes" (ngModelChange)="dirty = true"></textarea></label>
+        <button class="btn-primary" type="button" (click)="saveTracking()" [disabled]="!dirty">Save progress</button>
+      </fieldset>
+      <h3>History</h3><ol class="history"><li *ngFor="let event of application.events"><time>{{ event.happened_at | date:'medium' }}</time><p>{{ event.notes || event.event_type }}</p></li></ol><p *ngIf="!application.events.length">No activity recorded yet.</p>
+    </section>
+  </ng-container>
+</section>

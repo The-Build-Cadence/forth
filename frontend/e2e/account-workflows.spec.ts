@@ -25,6 +25,7 @@ test('settings saves personal AI choices without retaining the entered key and s
   });
   await page.goto('/settings');
   await expect(page.getByRole('heading', {name:'Settings', exact:true})).toBeVisible();
+  await page.getByText('Advanced · use your own AI account', {exact:true}).click();
   await page.getByLabel('Use my OpenAI account').check();
   await page.getByLabel('OpenAI API key').fill('sk-example-test-only');
   await page.getByLabel('Text model', {exact:false}).fill('gpt-4.1');

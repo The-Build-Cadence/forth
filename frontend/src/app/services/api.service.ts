@@ -188,6 +188,7 @@ export interface ProfileImprovementProposal {
 }
 
 export interface JobPosting {
+  document_status?: 'not_created' | 'generating' | 'needs_review' | 'reviewed' | 'failed';
   materials_status?: string;
   materials_started_at?: string | null;
   has_materials?: boolean;
@@ -338,6 +339,12 @@ export class ApiService {
   dashboard(): Observable<any> {
     return this.http.get(`${environment.apiBaseUrl}/dashboard/`);
   }
+
+  ingestDocument(id: number): Observable<any> { return this.http.post(`${environment.apiBaseUrl}/profile/documents/${id}/ingest/`, {}); }
+  searchSetup(): Observable<any> { return this.http.get(`${environment.apiBaseUrl}/start/`); }
+  saveSetupDraft(payload: any): Observable<any> { return this.http.patch(`${environment.apiBaseUrl}/start/`, payload); }
+  saveSearchSetup(payload: any): Observable<any> { return this.http.post(`${environment.apiBaseUrl}/start/`, payload); }
+  startDiscovery(): Observable<SourceRun> { return this.http.post<SourceRun>(`${environment.apiBaseUrl}/start/discover/`, {}); }
 
   today(): Observable<any> {
     return this.http.get(`${environment.apiBaseUrl}/today/`);

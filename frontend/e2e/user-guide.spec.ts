@@ -9,7 +9,8 @@ test('standalone user guide is complete, responsive, and navigable', async ({ pa
   await expect(page.getByRole('heading', { name: /A calmer path/ })).toBeVisible();
   await expect(page.getByRole('navigation', { name: 'Guide contents' })).toBeVisible();
   await expect(page.locator('.journey .step')).toHaveCount(9);
-  await expect(page.locator('.card')).toHaveCount(20);
+  await expect(page.locator('#quick-start')).toContainText('Save & finish later');
+  await expect(page.locator('#sourcing')).toContainText('Find jobs for me');
 
   await page.getByRole('link', { name: 'Progress & statuses' }).click();
   await expect(page.locator('#progress')).toBeInViewport();

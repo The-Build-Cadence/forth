@@ -132,10 +132,20 @@ def _ocr_pdf(path: str) -> str:
 def extract_text_from_upload(path: str) -> str:
     suffix = Path(path).suffix.lower()
     try:
+        if Path(path).stat().st_size > 15 * 1024 * 1024:
+            raise ValueError('Resume files must be 15 MB or smaller.')
+        if suffix in {'.docx', '.odt'}:
+            with zipfile.ZipFile(path) as archive:
+                entries = archive.infolist()
+                if len(entries) > 2000 or sum(entry.file_size for entry in entries) > 50 * 1024 * 1024:
+                    raise ValueError('The document expands beyond the safe processing limit.')
+
         if suffix == '.pdf':
             from pypdf import PdfReader
 
             reader = PdfReader(path)
+            if len(reader.pages) > 100:
+                raise ValueError('Resumes must contain at most 100 pages.')
             text = '\n\n'.join(page.extract_text() or '' for page in reader.pages)
             text = text if clean_text(text) else _ocr_pdf(path)
             links = []

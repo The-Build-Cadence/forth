@@ -1,44 +1,46 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Component, Input, OnDestroy, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { applicationStageLabel } from '../services/application-journey';
 import { Subscription } from 'rxjs';
 import { ApiService, JobPosting, ProfileImprovementProposal } from '../services/api.service';
 import { RealtimeService } from '../services/realtime.service';
 import { MatchRadarComponent } from '../components/match-radar.component';
 
 @Component({
+  selector: 'app-job-overview',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink, MatchRadarComponent],
   template: `
     <section class="page">
-      <div class="page-head">
+      <div class="page-head" *ngIf="!embeddedJobId">
         <div>
           <p class="eyebrow">Opportunity inbox</p>
           <h1>Decide where your effort belongs.</h1>
-          <p class="page-intro">Every role is filtered for eligibility, decomposed into fit signals, and backed by your profile evidence.</p>
+          <p class="page-intro">See how each role fits your experience and preferences, then choose your next step.</p>
         </div>
         <button class="btn-primary" type="button" (click)="activeTab = 'import'">＋ Import a job</button>
       </div>
 
-      <div class="tabs" role="tablist" aria-label="Match sections">
+      <div class="tabs" role="tablist" aria-label="Match sections" *ngIf="!embeddedJobId">
         <button type="button" role="tab" [class.active]="activeTab === 'matches'" [attr.aria-selected]="activeTab === 'matches'" (click)="activeTab = 'matches'">Your matches <span>{{ jobs.length }}</span></button>
         <button type="button" role="tab" [class.active]="activeTab === 'import'" [attr.aria-selected]="activeTab === 'import'" (click)="activeTab = 'import'">Import job</button>
       </div>
       <p class="feedback-banner" *ngIf="message">{{ message }}</p>
 
       <section class="panel import-panel" *ngIf="activeTab === 'import'">
-        <div class="panel-head"><div><h2>Add a job description</h2><p>Paste the complete posting. We’ll structure it and score it against your profile.</p></div></div>
-        <label>Job URL <span class="optional">Optional</span><input name="sourceUrl" [(ngModel)]="sourceUrl" placeholder="https://company.example/jobs/123"></label>
+        <div class="panel-head"><div><h2>Add a job description</h2><p>Paste a public employer job link or the full description. We’ll compare it with your experience.</p></div></div>
+        <label>Job URL <span class="optional">Or paste the description below</span><input name="sourceUrl" [(ngModel)]="sourceUrl" placeholder="https://company.example/jobs/123"></label>
         <label>Job description<textarea name="jobText" rows="13" [(ngModel)]="jobText" placeholder="Paste the full job description here…"></textarea></label>
         <div class="action-row form-actions">
-          <button class="btn-primary" type="button" (click)="importJob()" [disabled]="!jobText.trim() || importing"><span class="spinner" *ngIf="importing" aria-hidden="true"></span>{{ importing ? 'Extracting and ranking…' : 'Extract and rank' }}</button>
+          <button class="btn-primary" type="button" (click)="importJob()" [disabled]="(!jobText.trim() && !sourceUrl.trim()) || importing"><span class="spinner" *ngIf="importing" aria-hidden="true"></span>{{ importing ? 'Extracting and ranking…' : 'Check this job’s fit' }}</button>
           <button class="btn-secondary" type="button" (click)="activeTab = 'matches'" [disabled]="importing">Cancel</button>
         </div>
       </section>
 
-      <div class="workspace-grid" *ngIf="activeTab === 'matches'">
-        <section class="panel matches-list-panel">
+      <div [class.workspace-grid]="!embeddedJobId" *ngIf="activeTab === 'matches'">
+        <section class="panel matches-list-panel" *ngIf="!embeddedJobId">
           <div class="panel-head">
             <div><h2>Recent opportunities</h2><p>{{ totalJobs }} roles · newest discoveries first</p></div>
             <div class="filter-row">
@@ -62,7 +64,7 @@ import { MatchRadarComponent } from '../components/match-radar.component';
               <small>{{ job.company || 'Unknown company' }} · {{ job.location || job.remote_policy }}</small>
               <span class="job-meta-line" [title]="eligibilityHelp(job)"><i [class.pass]="job.match?.hard_filter_status === 'pass'"></i>{{ eligibilityLabel(job) }} · {{ job.freshness_status || 'fresh' }}</span>
               <span class="job-meta-line">Imported {{ job.discovered_at | date:'medium' }}</span>
-              <span class="job-application-state" [class.linked]="job.application">{{ job.application ? 'In pipeline · ' + applicationStatus(job.application.status) : 'Not in pipeline yet' }}</span>
+              <span class="job-application-state" [class.linked]="job.application">{{ job.application ? applicationStatus(job.application.status) : 'Not saved' }}</span>
             </span>
             <span class="fit-score" [class.high]="job.match?.meets_profile_threshold"><b>{{ job.match?.normalized_score || 0 }}</b><small>calibrated · {{ job.match?.score || 0 }} raw</small></span>
           </button>
@@ -85,13 +87,13 @@ import { MatchRadarComponent } from '../components/match-radar.component';
             <span class="status-chip">{{ selected.seniority || 'seniority unknown' }}</span>
             <span class="status-chip" tabindex="0" [title]="eligibilityHelp(selected)" [class.good]="selected.match?.hard_filter_status === 'pass'">{{ eligibilityLabel(selected) }}</span>
             <span class="status-chip" [class.good]="selected.match?.meets_profile_threshold">{{ selected.match?.meets_profile_threshold ? 'ready to prepare' : 'below your threshold' }} · raw target {{ selected.match?.profile_minimum_score || 50 }}</span>
-            <span class="status-chip" [class.good]="!!selected.application">{{ selected.application ? 'Pipeline · ' + applicationStatus(selected.application.status) : 'Not in pipeline yet' }}</span>
+            <span class="status-chip" [class.good]="!!selected.application">{{ selected.application ? applicationStatus(selected.application.status) : 'Not saved' }}</span>
           </div>
 
           <div class="insight-callout"><span>✦</span><div><strong>Match summary</strong><p>{{ matchSummary(selected) }}</p></div></div>
 
           <div class="insight-callout"><div><strong>{{ eligibilityLabel(selected) }}</strong><p>{{ eligibilityHelp(selected) }}</p><small>This checks your required conditions, such as location, work authorization and work mode. It is not an employer rejection.</small></div></div>
-          <h3>Why this score</h3>
+          <details class="match-explanation"><summary>Why this match? View skills and evidence</summary><h3>Why this score</h3>
           <app-match-radar [signals]="selected.match?.signals" [jobTitle]="selected.title" />
 
           <div class="two-col detail-columns">
@@ -124,24 +126,9 @@ import { MatchRadarComponent } from '../components/match-radar.component';
             </button>
           </div>
 
-          <section class="opportunity-instructions">
-            <h3>Instructions for this opportunity</h3>
-            <label><input type="checkbox" [(ngModel)]="overrideInstructions" (ngModelChange)="instructionsDirty = true">Replace my account defaults for this opportunity</label>
-            <p class="muted">{{ overrideInstructions ? 'This text replaces your account instructions for every new version of both materials. Leave it empty to use no custom instructions.' : 'New materials inherit your saved Candidate Profile instructions.' }}</p>
-            <textarea *ngIf="overrideInstructions" rows="4" maxlength="6000" aria-label="Opportunity material instructions" [(ngModel)]="instructionsDraft" (ngModelChange)="instructionsDirty = true" placeholder="For this application, use a classic layout and accent #263b36."></textarea>
-            <button class="btn-secondary" type="button" (click)="saveInstructions(selected)" [disabled]="!instructionsDirty || savingInstructions">{{ savingInstructions ? 'Saving…' : 'Save instructions' }}</button>
-            <a routerLink="/profile">Edit account defaults</a>
-          </section>
-          <div class="opportunity-actions">
-            <div><button class="btn-primary" type="button" (click)="regenerateMaterials(selected)" [disabled]="materialsBusy(selected) || instructionsDirty || savingInstructions">{{ materialsBusy(selected) ? 'Generating materials…' : selected.has_materials ? 'Generate new versions' : 'Generate resume & cover letter' }}</button><p>Creates drafts using your saved instructions and adds this role to your pipeline. Review them in Resume Studio; this does not submit an application.</p></div>
-            <p role="status" *ngIf="instructionsDirty">Save your instruction changes before generating.</p>
-            <p role="status" *ngIf="selected.materials_status === 'failed'">Generation failed. Your previous versions are safe. Try generating again.</p>
-            <a class="btn-secondary" *ngIf="selected.has_materials" routerLink="/resume-lab" [queryParams]="{ job: selected.id }">Review materials →</a>
-            <div><button class="btn-secondary" type="button" (click)="createApplication(selected)" [disabled]="!!selected.application || savingJobId !== null || materialsBusy(selected)">{{ selected.application ? 'Saved in pipeline' : savingJobId === selected.id ? 'Saving…' : 'Save to pipeline' }}</button><p>Tracks this opportunity without generating documents.</p></div>
-            <div *ngIf="selected.application"><a class="btn-secondary" [routerLink]="['/pipeline']" [queryParams]="{ application: selected.application.id }">Open application →</a><p>Manage status, notes, follow-ups and downloads.</p></div>
-            <div *ngIf="selected.application"><button class="btn-secondary" type="button" (click)="markApplied(selected)" [disabled]="selected.application.status === 'applied' || markingApplied">{{ selected.application.status === 'applied' ? 'Marked Applied' : markingApplied ? 'Saving…' : 'Mark as Applied' }}</button><p>Records that you already submitted this application, including outside Forth.</p></div>
-            <div><button class="btn-secondary" type="button" (click)="recompute(selected)" [disabled]="recomputingJobId !== null">{{ recomputingJobId === selected.id ? 'Updating match…' : 'Refresh match analysis' }}</button><p>Rechecks fit against your current profile. Does not change materials.</p></div>
-          </div>
+          </details>
+          <div class="opportunity-actions" *ngIf="!embeddedJobId"><a class="btn-primary" [routerLink]="['/jobs', selected.id]">Open job workspace →</a><p>Save this job, prepare and review documents, then track your application in one place.</p></div>
+          <details><summary>More actions</summary><button class="btn-secondary" type="button" (click)="recompute(selected)" [disabled]="recomputingJobId !== null">{{ recomputingJobId === selected.id ? 'Updating match…' : 'Refresh match analysis' }}</button></details>
         </section>
 
         <ng-template #emptyState>
@@ -191,6 +178,7 @@ import { MatchRadarComponent } from '../components/match-radar.component';
   `,
 })
 export class MatchesComponent implements OnInit, OnDestroy {
+  @Input() embeddedJobId?: number;
   jobs: JobPosting[] = [];
   totalJobs = 0;
   currentPage = 1;
@@ -205,19 +193,11 @@ export class MatchesComponent implements OnInit, OnDestroy {
   importing = false;
   recomputingJobId: number | null = null;
   preparingJobId: number | null = null;
-  regeneratingJobId: number | null = null;
-  savingJobId: number | null = null;
   proposingJobId: number | null = null;
   improvementProposal?: ProfileImprovementProposal;
   acceptedSuggestionIds = new Set<string>();
   applyingImprovements = false;
   private eventSub?: Subscription;
-  private poll?: ReturnType<typeof setInterval>;
-  overrideInstructions = false;
-  instructionsDraft = '';
-  instructionsDirty = false;
-  savingInstructions = false;
-  markingApplied = false;
   chosenGap = '';
   draggedGap = '';
   gapLinks: {fact_id: number; gap: string}[] = [];
@@ -273,15 +253,14 @@ export class MatchesComponent implements OnInit, OnDestroy {
     if (drag?.element.hasPointerCapture(drag.id)) drag.element.releasePointerCapture(drag.id);
   }
 
-  constructor(private api: ApiService, private route: ActivatedRoute, private realtime: RealtimeService) {}
+  constructor(private api: ApiService, private route: ActivatedRoute, private realtime: RealtimeService, private router: Router) {}
 
   ngOnInit(): void {
-    const jobId = Number(this.route.snapshot.queryParamMap.get('job'));
+    if (this.route.snapshot.queryParamMap.get('tab') === 'import') this.activeTab = 'import';
+    const jobId = this.embeddedJobId || Number(this.route.snapshot.queryParamMap.get('job'));
+    if (jobId && !this.embeddedJobId) { void this.router.navigate(['/jobs', jobId], { replaceUrl: true }); return; }
     if (jobId > 0) this.api.job(jobId).subscribe(job => this.select(job));
     this.load();
-    this.poll = setInterval(() => {
-      if (this.selected && this.materialsBusy(this.selected) && !this.instructionsDirty) this.select(this.selected);
-    }, 5000);
     this.eventSub = this.realtime.events$.subscribe((event) => {
       if (event.type === 'match_recomputed') {
         if (this.recomputingJobId === event.job_id) this.recomputingJobId = null;
@@ -298,20 +277,16 @@ export class MatchesComponent implements OnInit, OnDestroy {
         this.message = `Profile updated and ${event.count || 'all'} opportunities rescored.`;
         this.load();
       }
-      if (event.type === 'materials_regenerated' && this.regeneratingJobId === event.job_id) {
-        this.regeneratingJobId = null;
-        this.message = 'Resume and cover letter are ready to review in Resume Studio.'; this.load();
-      }
-      if (event.type === 'materials_regeneration_failed' && this.regeneratingJobId === event.job_id) {
-        this.regeneratingJobId = null;
-        this.message = 'Could not generate the application materials. Please try again.'; this.load();
-      }
     });
   }
 
-  ngOnDestroy(): void { this.cancelGapDrag(); this.eventSub?.unsubscribe(); clearInterval(this.poll); }
+  ngOnDestroy(): void { this.cancelGapDrag(); this.eventSub?.unsubscribe(); }
 
   load(): void {
+    if (this.embeddedJobId) {
+      this.api.job(this.embeddedJobId).subscribe(job => this.select(job));
+      return;
+    }
     const params: Record<string, string> = {};
     if (this.search) params['search'] = this.search;
     if (this.minScore) params['min_score'] = this.minScore;
@@ -334,27 +309,18 @@ export class MatchesComponent implements OnInit, OnDestroy {
 
   select(job: JobPosting): void {
     const changed = this.selected?.id !== job.id;
-    if (changed) { this.instructionsDirty = false; this.gapLinks = []; this.chosenGap = ''; this.cancelGapDrag(); }
+    if (changed) { this.gapLinks = []; this.chosenGap = ''; this.cancelGapDrag(); }
     this.selected = job;
     this.api.job(job.id).subscribe({
       next: (detail) => {
         if (this.selected?.id === detail.id) {
           this.selected = detail;
-          if (!this.instructionsDirty) {
-            this.overrideInstructions = detail.generation_instructions != null;
-            this.instructionsDraft = detail.generation_instructions || '';
-          }
-          if (['ready', 'failed'].includes(detail.materials_status || '')) this.regeneratingJobId = null;
         }
       },
       error: () => { this.message = 'Could not load the full opportunity details.'; },
     });
   }
 
-  materialsBusy(job: JobPosting): boolean {
-    const recent = !job.materials_started_at || Date.now() - Date.parse(job.materials_started_at) < 15 * 60 * 1000;
-    return recent && (this.regeneratingJobId === job.id || ['queued', 'running'].includes(job.materials_status || ''));
-  }
 
   eligibilityLabel(job: JobPosting): string {
     return ({ pass: 'Meets required conditions', fail: 'Required condition mismatch', uncertain: 'Needs confirmation' } as Record<string, string>)[job.match?.hard_filter_status || ''] || 'Not assessed yet';
@@ -372,25 +338,8 @@ export class MatchesComponent implements OnInit, OnDestroy {
     return (job.match?.explanation_json?.summary || 'No match summary yet.').replace(/eligibility (fail|pass|uncertain)/gi, this.eligibilityLabel(job).toLowerCase());
   }
 
-  saveInstructions(job: JobPosting): void {
-    this.savingInstructions = true;
-    this.api.updateJob(job.id, { generation_instructions: this.overrideInstructions ? this.instructionsDraft : null }).subscribe({
-      next: (updated) => { this.savingInstructions = false; if (this.selected?.id === job.id) { this.selected = updated; this.instructionsDirty = false; } this.message = 'Instructions saved. Generate a new version to apply them.'; },
-      error: () => { this.savingInstructions = false; this.message = 'Could not save instructions. Your edits are still here.'; },
-    });
-  }
-
-  markApplied(job: JobPosting): void {
-    if (!job.application || this.markingApplied) return;
-    this.markingApplied = true;
-    this.api.updateApplication(job.application.id, { status: 'applied' }).subscribe({
-      next: () => { this.markingApplied = false; this.message = 'Recorded as Applied.'; this.load(); },
-      error: () => { this.markingApplied = false; this.message = 'Could not update the application status.'; },
-    });
-  }
-
   applicationStatus(status: string): string {
-    return status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+    return applicationStageLabel(status);
   }
 
   importJob(): void {
@@ -407,7 +356,7 @@ export class MatchesComponent implements OnInit, OnDestroy {
         this.activeTab = 'matches';
         this.importing = false;
       },
-      error: () => { this.message = 'Import failed. Check the posting text and try again.'; this.importing = false; },
+      error: response => { this.message = response?.error?.detail || 'Could not read this posting. Check the link or paste its full description.'; this.importing = false; },
     });
   }
 
@@ -482,40 +431,4 @@ export class MatchesComponent implements OnInit, OnDestroy {
     });
   }
 
-  tailor(job: JobPosting): void {
-    this.message = 'Generating tailored resume.';
-    this.api.tailorResume(job.id).subscribe({
-      next: () => this.message = 'Your AI-designed resume is ready. Open Resume Studio to review it.',
-      error: () => this.message = 'Resume tailoring failed.',
-    });
-  }
-
-  regenerateMaterials(job: JobPosting): void {
-    if (this.materialsBusy(job) || this.instructionsDirty) return;
-    this.regeneratingJobId = job.id;
-    this.message = 'Generating a fresh resume and cover letter from your latest profile evidence…';
-    this.api.regenerateApplicationMaterials(job.id).subscribe({
-      next: (result) => {
-        job.materials_status = result.mode === 'sync' ? 'ready' : 'queued';
-        job.materials_started_at = new Date().toISOString();
-        if (result.mode === 'sync') {
-          this.regeneratingJobId = null;
-          this.message = 'Resume and cover letter are ready to review in Resume Studio.'; this.load();
-        }
-      },
-      error: () => {
-        this.regeneratingJobId = null;
-        this.message = 'Could not generate the application materials. Please try again.'; this.load();
-      },
-    });
-  }
-
-  createApplication(job: JobPosting): void {
-    if (this.savingJobId) return;
-    this.savingJobId = job.id;
-    this.api.createApplication(job.id).subscribe({
-      next: () => { this.savingJobId = null; this.message = 'Application created in pipeline.'; this.load(); },
-      error: () => { this.savingJobId = null; this.message = 'Could not create application.'; },
-    });
-  }
 }

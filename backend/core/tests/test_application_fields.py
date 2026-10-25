@@ -94,7 +94,7 @@ class ApplicationFieldTests(TestCase):
         result = html_fields('<form id="newsletter"><label>Email<input name="email"></label><button>Subscribe</button></form>')
         self.assertEqual(result, [])
 
-    @patch('requests.get')
+    @patch('core.public_http.public_get')
     @patch('socket.getaddrinfo', return_value=[(2, 1, 6, '', ('127.0.0.1', 80))])
     def test_private_application_url_is_not_fetched(self, dns, get):
         from core.domain.application_fields import _public_page

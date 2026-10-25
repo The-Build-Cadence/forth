@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit, ViewEncapsulation } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, ViewEncapsulation } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
@@ -17,26 +17,26 @@ interface ResumeDesign {
 }
 
 @Component({
+  selector: 'app-job-documents',
   standalone: true,
   imports: [CommonModule, FormsModule, RouterLink],
   styleUrl: './resume-lab.component.css',
   encapsulation: ViewEncapsulation.None,
   template: `
     <section class="page resume-studio-page">
-      <div class="page-head resume-studio-head">
+      <div class="page-head resume-studio-head" *ngIf="!embeddedJobId">
         <div>
           <p class="eyebrow">AI application materials</p>
-          <h1>Resume Studio</h1>
-          <p class="page-intro">Start with your source and contact details, generate for a specific role, then review and download a version. Approving a draft never submits an application.</p>
+          <h1>Document library</h1>
+          <p class="page-intro">Browse your document versions and manage your source resume and contact details. Prepare new documents from a job workspace.</p>
         </div>
-        <button class="btn-primary" type="button" (click)="activeTab = 'tailor'">✦ Generate a resume</button>
+        <a class="btn-primary" routerLink="/matches">Choose a job to prepare</a>
       </div>
 
-      <div class="tabs" role="tablist" aria-label="Resume Studio sections">
-        <button type="button" role="tab" [class.active]="activeTab === 'create'" [attr.aria-selected]="activeTab === 'create'" (click)="activeTab = 'create'">1 · Source resume</button>
-        <button type="button" role="tab" [class.active]="activeTab === 'contact'" [attr.aria-selected]="activeTab === 'contact'" (click)="activeTab = 'contact'; loadContact()">2 · Contact details</button>
-        <button type="button" role="tab" [class.active]="activeTab === 'tailor'" [attr.aria-selected]="activeTab === 'tailor'" (click)="activeTab = 'tailor'">3 · Generate</button>
-        <button type="button" role="tab" [class.active]="activeTab === 'library'" [attr.aria-selected]="activeTab === 'library'" (click)="activeTab = 'library'">4 · Review & download</button>
+      <div class="tabs" role="tablist" aria-label="Document library sections" *ngIf="!embeddedJobId">
+        <button type="button" role="tab" [class.active]="activeTab === 'create'" [attr.aria-selected]="activeTab === 'create'" (click)="activeTab = 'create'">Source resume</button>
+        <button type="button" role="tab" [class.active]="activeTab === 'contact'" [attr.aria-selected]="activeTab === 'contact'" (click)="activeTab = 'contact'; loadContact()">Contact details</button>
+        <button type="button" role="tab" [class.active]="activeTab === 'library'" [attr.aria-selected]="activeTab === 'library'" (click)="activeTab = 'library'">Review & download</button>
       </div>
       <p class="feedback-banner" role="status" *ngIf="message">{{ message }}</p>
 
@@ -63,26 +63,6 @@ interface ResumeDesign {
         </form>
       </section>
 
-      <section class="panel generation-workflow" *ngIf="activeTab === 'tailor'">
-        <div class="generation-hero">
-          <span class="generation-icon">✦</span>
-          <div><p class="eyebrow">One-click generation</p><h2>Generate a resume for one opportunity</h2><p>Creates a new draft from your source and career evidence. Existing versions remain available. For a resume and cover letter together, use Generate materials on the opportunity.</p></div>
-        </div>
-        <div class="generation-steps" aria-label="Generation process">
-          <div><span>1</span><strong>Understand the role</strong><small>Responsibilities, seniority, language, and priorities</small></div>
-          <div><span>2</span><strong>Choose the proof</strong><small>Your strongest verified, relevant evidence</small></div>
-          <div><span>3</span><strong>Write and design</strong><small>Hierarchy, bullets, typography, spacing, and density</small></div>
-        </div>
-        <label class="opportunity-picker">Target opportunity<select [(ngModel)]="targetJobId" (ngModelChange)="loadInstructions()" name="targetJobId"><option [ngValue]="null">Choose a job from your matches</option><option *ngFor="let job of jobs" [ngValue]="job.id">{{ job.title }} · {{ job.company }}</option></select></label>
-        <p>New resumes use your saved <button class="btn-secondary" type="button" (click)="activeTab = 'contact'">Contact details</button>.</p>
-        <section class="studio-instruction-preview"><strong>Instructions used for this generation</strong><p>{{ effectiveInstructions || 'No custom instructions. Forth will choose a suitable style.' }}</p><a routerLink="/profile">Edit account defaults</a> · <a routerLink="/matches" [queryParams]="{ job: targetJobId }">Edit opportunity instructions</a><small>Changes apply to new versions only. Contact inclusion is controlled separately above.</small></section>
-        <div class="ai-safety-note"><span>✓</span><div><strong>Evidence stays in control</strong><p>Forth can reframe and prioritize your experience, but it cannot invent facts, dates, employers, metrics, or credentials.</p></div></div>
-        <div class="action-row form-actions">
-          <button class="btn-primary" type="button" (click)="tailor()" [disabled]="!targetJobId || generating"><span class="spinner" *ngIf="generating" aria-hidden="true"></span>{{ generating ? 'Writing and designing…' : 'Generate resume draft' }}</button>
-          <button class="btn-secondary" type="button" (click)="activeTab = 'library'" [disabled]="generating">Cancel</button>
-        </div>
-      </section>
-
       <section class="panel source-resume-panel" *ngIf="activeTab === 'create'">
         <div class="panel-head"><div><p class="eyebrow">Candidate source</p><h2>Add your master resume</h2><p>Upload your resume in Candidate Profile to extract career evidence and contact details, or paste a master copy here to use as the source for new drafts.</p></div></div>
         <p><a class="btn-secondary" routerLink="/profile" [queryParams]="{ tab: 'sources' }">Upload a resume & extract evidence →</a></p>
@@ -95,34 +75,34 @@ interface ResumeDesign {
       <div class="resume-studio-grid" *ngIf="activeTab === 'library'">
         <aside class="panel material-library">
           <div class="panel-head"><div><h2>Generated materials</h2><p>{{ resumes.length }} resumes · {{ coverLetters.length }} letters</p></div><button class="icon-button" type="button" (click)="load()" aria-label="Refresh materials">↻</button></div>
-          <label>Filter by opportunity<select [(ngModel)]="libraryJobId" (ngModelChange)="loadMaterials()"><option [ngValue]="null">All opportunities</option><option *ngFor="let job of jobs" [ngValue]="job.id">{{ job.title }} · {{ job.company }}</option></select></label>
+          <label *ngIf="!embeddedJobId">Filter by opportunity<select [(ngModel)]="libraryJobId" (ngModelChange)="loadMaterials()"><option [ngValue]="null">All opportunities</option><option *ngFor="let job of jobs" [ngValue]="job.id">{{ job.title }} · {{ job.company }}</option></select></label>
           <div class="material-group-label">Resumes</div>
           <button class="job-row resume-version-row" type="button" *ngFor="let resume of resumes" [class.selected]="selected?.id === resume.id" (click)="selectResume(resume)">
             <span class="version-icon">{{ resume.kind === 'tailored' ? 'AI' : 'S' }}</span>
-            <span><strong>{{ resume.title }}</strong><small>{{ resume.target_job_title }} · {{ resume.updated_at | date:'medium' }} · {{ resume.approved ? 'Approved' : 'Draft' }}</small></span>
-            <span class="status-dot" [class.approved]="resume.approved" [attr.aria-label]="resume.approved ? 'Approved' : 'Draft'"></span>
+            <span><strong>{{ resume.title }}</strong><small>{{ resume.target_job_title }} · {{ resume.updated_at | date:'medium' }} · {{ resume.approved ? 'Reviewed' : 'Draft' }}</small></span>
+            <span class="status-dot" [class.approved]="resume.approved" [attr.aria-label]="resume.approved ? 'Reviewed' : 'Draft'"></span>
           </button>
-          <div class="empty-state small" *ngIf="!resumes.length"><span class="empty-icon">▤</span><h3>No resumes yet</h3><p>Add a source resume, then let Forth generate the designed version.</p><button class="btn-primary" type="button" (click)="activeTab = 'create'">Add source resume</button></div>
-          <ng-container *ngIf="coverLetters.length">
+          <div class="empty-state small" *ngIf="!resumes.length && !embeddedJobId"><span class="empty-icon">▤</span><h3>No resumes yet</h3><p>Add a source resume, then let Forth generate the designed version.</p><button class="btn-primary" type="button" (click)="activeTab = 'create'">Add source resume</button></div>
+          <p *ngIf="embeddedJobId && !coverLetters.length" class="field-hint">No cover letter yet. Use “Generate new document versions” in More actions above to create both documents.</p><ng-container *ngIf="coverLetters.length">
             <div class="material-group-label">Cover letters</div>
-            <button class="job-row resume-version-row" type="button" *ngFor="let letter of coverLetters" [class.selected]="selectedLetter?.id === letter.id" (click)="selectLetter(letter)"><span class="version-icon letter">CL</span><span><strong>{{ letter.title }}</strong><small>Version {{ letter.version }} · {{ letter.target_job_title }} · {{ letter.approved ? 'Approved' : 'Draft' }}</small></span><span class="status-dot" [class.approved]="letter.approved"></span></button>
+            <button class="job-row resume-version-row" type="button" *ngFor="let letter of coverLetters" [class.selected]="selectedLetter?.id === letter.id" (click)="selectLetter(letter)"><span class="version-icon letter">CL</span><span><strong>{{ letter.title }}</strong><small>Version {{ letter.version }} · {{ letter.target_job_title }} · {{ letter.approved ? 'Reviewed' : 'Draft' }}</small></span><span class="status-dot" [class.approved]="letter.approved"></span></button>
           </ng-container>
         </aside>
 
-        <main class="resume-result" *ngIf="selected">
+        <section class="resume-result" *ngIf="selected">
           <section class="result-toolbar">
             <div>
-              <div class="result-title-line"><span class="ai-designed-badge">✦ AI designed</span><span class="status-chip" [class.good]="selected.approved">{{ selected.approved ? 'Approved' : 'Ready for review' }}</span></div>
+              <div class="result-title-line"><span class="ai-designed-badge">✦ AI designed</span><span class="status-chip" [class.good]="selected.approved">{{ selected.approved ? 'Reviewed' : 'Ready for review' }}</span></div>
               <h2>{{ selected.title }}</h2>
               <p>{{ selected.target_job_title || 'Canonical source' }} · Updated {{ selected.updated_at | date:'mediumDate' }}</p>
             </div>
             <div class="result-actions">
-              <button class="btn-secondary" type="button" *ngIf="selected.target_job" (click)="regenerate(selected)" [disabled]="generating"><span class="spinner" *ngIf="generating" aria-hidden="true"></span>{{ generating ? 'Regenerating…' : '↻ Regenerate' }}</button>
-              <button class="btn-primary" type="button" (click)="downloadPdf(selected)" [disabled]="exportingPdfId === selected.id || designDirty || designLoading"><span class="spinner" *ngIf="exportingPdfId === selected.id" aria-hidden="true"></span>{{ exportingPdfId === selected.id ? 'Rendering PDF…' : '↓ Download PDF' }}</button>
+              <a class="btn-secondary" *ngIf="selected.target_job && !embeddedJobId" [routerLink]="['/jobs', selected.target_job]" [queryParams]="{tab: 'documents'}">Open job workspace</a>
+              <button class="btn-secondary" type="button" (click)="downloadPdf(selected)" [disabled]="exportingPdfId === selected.id || designDirty || designLoading"><span class="spinner" *ngIf="exportingPdfId === selected.id" aria-hidden="true"></span>{{ exportingPdfId === selected.id ? 'Rendering PDF…' : '↓ Download PDF' }}</button>
             </div>
           </section>
 
-          <section class="resume-designer" *ngIf="designDraft">
+          <details class="resume-designer" *ngIf="designDraft"><summary>Adjust document design</summary>
             <div class="panel-head"><div><h3>Resume designer</h3><p>Adjust this version without rewriting your experience. The preview uses the PDF renderer’s design and embedded fonts.</p></div></div>
             <div class="designer-controls">
               <label>Style<select [(ngModel)]="designDraft.template" (ngModelChange)="previewDesign()"><option value="modern">Modern</option><option value="minimal">Minimal</option><option value="classic">Classic</option></select></label>
@@ -137,7 +117,7 @@ interface ResumeDesign {
             <p class="field-hint">The preview shows continuous content. PDF export checks the page limit and may use compact spacing to fit. If it still exceeds the limit, Forth asks you to shorten it instead of cutting off content.</p>
             <div class="action-row"><button type="button" class="btn-secondary" (click)="previewDesign(true)" [disabled]="designLoading">Apply saved style instructions</button><button type="button" class="btn-primary" (click)="saveDesign()" [disabled]="!designDirty || designLoading">{{ designLoading ? 'Updating preview…' : 'Save design' }}</button></div>
             <p class="field-hint">Saved style instructions use this opportunity’s override, or your Settings defaults. Writing and emphasis changes require Regenerate. Save this design before downloading.</p>
-          </section>
+          </details>
           <p class="field-hint" role="status" *ngIf="designLoading">Loading design preview…</p>
           <p role="alert" *ngIf="designError">{{ designError }} <button type="button" class="btn-secondary" (click)="loadDesign()">Retry preview</button></p>
           <section class="document-stage" *ngIf="designPreview">
@@ -159,20 +139,20 @@ interface ResumeDesign {
           <p class="field-hint">Approval records your review of this version. Downloads are available for drafts; review their content before using them.</p>
           <label class="risk-accept" *ngIf="!selected.approved && unsupportedClaims(selected)"><input type="checkbox" [(ngModel)]="acceptResumeRisk" name="acceptResumeRisk"><span>I reviewed the unsupported claims and accept the risk for this version.</span></label>
           <div class="review-footer">
-            <button class="btn-primary" type="button" (click)="approve(selected)" *ngIf="!selected.approved" [disabled]="approvingResumeId === selected.id || (unsupportedClaims(selected) && !acceptResumeRisk)"><span class="spinner" *ngIf="approvingResumeId === selected.id" aria-hidden="true"></span>{{ approvingResumeId === selected.id ? 'Approving…' : '✓ Approve draft' }}</button>
+            <button class="btn-primary" type="button" (click)="approve(selected)" *ngIf="!selected.approved" [disabled]="approvingResumeId === selected.id || (unsupportedClaims(selected) && !acceptResumeRisk)"><span class="spinner" *ngIf="approvingResumeId === selected.id" aria-hidden="true"></span>{{ approvingResumeId === selected.id ? 'Saving review…' : 'Mark resume as reviewed' }}</button>
             <button class="btn-secondary quiet-action" type="button" (click)="downloadSource(selected)">Download source</button>
           </div>
-        </main>
+        </section>
 
-        <main class="resume-result" *ngIf="selectedLetter">
-          <section class="result-toolbar"><div><div class="result-title-line"><span class="ai-designed-badge purple">✦ AI written</span><span class="status-chip" [class.good]="selectedLetter.approved">{{ selectedLetter.approved ? 'Approved' : 'Ready for review' }}</span></div><h2>{{ selectedLetter.title }}</h2><p>Cover letter · version {{ selectedLetter.version }}</p></div></section>
+        <section class="resume-result" *ngIf="selectedLetter">
+          <section class="result-toolbar"><div><div class="result-title-line"><span class="ai-designed-badge purple">✦ AI written</span><span class="status-chip" [class.good]="selectedLetter.approved">{{ selectedLetter.approved ? 'Reviewed' : 'Ready for review' }}</span></div><h2>{{ selectedLetter.title }}</h2><p>Cover letter · version {{ selectedLetter.version }}</p></div></section>
           <section class="document-stage cover-letter-stage"><div class="page-shadow"><article class="resume-paper cover-letter-paper" [class.template-classic]="design(selectedLetter).template === 'classic'" [class.template-minimal]="design(selectedLetter).template === 'minimal'" [class.density-compact]="design(selectedLetter).density === 'compact'" [class.density-spacious]="design(selectedLetter).density === 'spacious'" [style.--document-accent]="design(selectedLetter).accent" [innerHTML]="renderMarkdown(selectedLetter.content_markdown)"></article></div></section>
           <details class="generation-notes" *ngIf="selectedLetter.validation?.unsupported_claims?.length"><summary>Claims to review</summary><ul><li *ngFor="let claim of selectedLetter.validation.unsupported_claims">{{ claim }}</li></ul></details>
           <p class="field-hint" *ngFor="let note of selectedLetter.validation?.risk_notes || []">{{ note }}</p>
           <div class="action-row"><button class="btn-secondary" (click)="downloadLetter(selectedLetter, 'pdf')">Download PDF</button><button class="btn-secondary" (click)="downloadLetter(selectedLetter, 'markdown')">Download Markdown</button></div>
           <label class="risk-accept" *ngIf="!selectedLetter.approved && (selectedLetter.validation?.unsupported_claims || []).length"><input type="checkbox" [(ngModel)]="acceptLetterRisk" name="acceptLetterRisk"><span>I reviewed the unsupported claims and accept the risk for this version.</span></label>
-          <div class="review-footer"><button class="btn-primary" type="button" (click)="approveLetter(selectedLetter)" *ngIf="!selectedLetter.approved" [disabled]="approvingLetterId === selectedLetter.id || ((selectedLetter.validation?.unsupported_claims || []).length && !acceptLetterRisk)"><span class="spinner" *ngIf="approvingLetterId === selectedLetter.id" aria-hidden="true"></span>{{ approvingLetterId === selectedLetter.id ? 'Approving…' : '✓ Approve cover letter' }}</button></div>
-        </main>
+          <div class="review-footer"><button class="btn-primary" type="button" (click)="approveLetter(selectedLetter)" *ngIf="!selectedLetter.approved" [disabled]="approvingLetterId === selectedLetter.id || ((selectedLetter.validation?.unsupported_claims || []).length && !acceptLetterRisk)"><span class="spinner" *ngIf="approvingLetterId === selectedLetter.id" aria-hidden="true"></span>{{ approvingLetterId === selectedLetter.id ? 'Saving review…' : 'Mark cover letter as reviewed' }}</button></div>
+        </section>
 
         <section class="panel empty-result" *ngIf="!selected && !selectedLetter"><span>✦</span><h2>Choose a generated version</h2><p>The designed resume and its evidence review will appear here.</p></section>
       </div>
@@ -180,27 +160,25 @@ interface ResumeDesign {
   `,
 })
 export class ResumeLabComponent implements OnInit {
+  @Input() embeddedJobId?: number;
+  @Output() documentsChanged = new EventEmitter<void>();
   resumes: Resume[] = [];
   sourceResumes: Resume[] = [];
   libraryJobId: number | null = null;
-  accountInstructions = '';
-  effectiveInstructions = '';
   savingSource = false;
   coverLetters: CoverLetter[] = [];
   jobs: JobPosting[] = [];
   selected?: Resume;
   selectedLetter?: CoverLetter;
-  targetJobId: number | null = null;
   newTitle = 'Master Resume';
   newMarkdown = '';
   message = '';
-  generating = false;
   exportingPdfId: number | null = null;
   approvingResumeId: number | null = null;
   approvingLetterId: number | null = null;
   acceptResumeRisk = false;
   acceptLetterRisk = false;
-  activeTab: 'library' | 'create' | 'tailor' | 'contact' = 'library';
+  activeTab: 'library' | 'create' | 'contact' = 'library';
   contact: ResumeContact = { phone: '', email: '', linkedin_url: '', include_phone: true, include_email: true, include_linkedin: true };
   contactLoaded = false;
   contactLoadFailed = false;
@@ -210,15 +188,15 @@ export class ResumeLabComponent implements OnInit {
   constructor(private api: ApiService, private route: ActivatedRoute, private sanitizer: DomSanitizer) {}
 
   ngOnInit(): void {
-    const job = Number(this.route.snapshot.queryParamMap.get('job'));
-    if (job > 0) { this.libraryJobId = job; this.targetJobId = job; }
+    const job = this.embeddedJobId || Number(this.route.snapshot.queryParamMap.get('job'));
+    if (job > 0) { this.libraryJobId = job; }
     this.load(); this.loadContact();
   }
 
   loadContact(): void {
     this.contactLoadFailed = false;
     this.api.candidateProfile().subscribe({
-      next: (profile) => { this.accountInstructions = profile.generation_instructions || ''; this.loadInstructions(); this.contact = { ...this.contact, ...profile.resume_contact }; this.contactLoaded = true; },
+      next: (profile) => { this.contact = { ...this.contact, ...profile.resume_contact }; this.contactLoaded = true; },
       error: () => { this.contactLoadFailed = true; },
     });
   }
@@ -252,7 +230,8 @@ export class ResumeLabComponent implements OnInit {
     });
   }
 
-  loadMaterials(): void {
+  loadMaterials(selectNewest = false): void {
+    if (selectNewest) { this.selected = undefined; this.selectedLetter = undefined; }
     const params: Record<string, string> = this.libraryJobId ? { job: String(this.libraryJobId) } : {};
     const resumeId = this.selected?.id;
     const letterId = this.selectedLetter?.id;
@@ -265,13 +244,6 @@ export class ResumeLabComponent implements OnInit {
       this.coverLetters = page.results;
       this.selectedLetter = this.coverLetters.find(letter => letter.id === letterId);
       if (letterId && !this.selectedLetter && this.resumes[0]) this.selectResume(this.resumes[0]);
-    });
-  }
-
-  loadInstructions(): void {
-    this.effectiveInstructions = this.accountInstructions;
-    if (this.targetJobId) this.api.job(this.targetJobId).subscribe(job => {
-      if (job.id === this.targetJobId) this.effectiveInstructions = job.generation_instructions ?? this.accountInstructions;
     });
   }
 
@@ -300,38 +272,17 @@ export class ResumeLabComponent implements OnInit {
     });
   }
 
-  tailor(jobId = this.targetJobId): void {
-    if (!jobId || this.generating) return;
-    this.targetJobId = jobId;
-    this.message = 'Forth is analyzing the role, selecting evidence, and designing your resume.';
-    this.generating = true;
-    this.api.tailorResume(jobId).subscribe({
-      next: (resume) => {
-        this.libraryJobId = jobId;
-        this.message = 'Your new resume is ready for review.';
-        this.selectResume(resume);
-        this.selectedLetter = undefined;
-        this.activeTab = 'library';
-        this.generating = false;
-        this.load();
-      },
-      error: () => { this.message = 'The resume could not be generated. Please try again.'; this.generating = false; },
-    });
-  }
-
-  regenerate(resume: Resume): void { if (resume.target_job) this.tailor(resume.target_job); }
-
   approve(resume: Resume): void {
     this.approvingResumeId = resume.id;
     this.api.approveResume(resume.id, this.acceptResumeRisk).subscribe((updated) => {
-      this.selected = updated; this.approvingResumeId = null; this.acceptResumeRisk = false; this.message = 'Resume approved and ready to use.'; this.load();
+      this.selected = updated; this.approvingResumeId = null; this.acceptResumeRisk = false; this.message = 'Resume review saved. This does not submit an application.'; this.load(); this.documentsChanged.emit();
     }, (error) => { this.approvingResumeId = null; this.message = error?.error?.detail || 'Could not approve this resume.'; });
   }
 
   approveLetter(letter: CoverLetter): void {
     this.approvingLetterId = letter.id;
     this.api.approveCoverLetter(letter.id, this.acceptLetterRisk).subscribe((updated) => {
-      this.selectedLetter = updated; this.approvingLetterId = null; this.acceptLetterRisk = false; this.load();
+      this.selectedLetter = updated; this.approvingLetterId = null; this.acceptLetterRisk = false; this.load(); this.documentsChanged.emit();
     }, (error) => { this.approvingLetterId = null; this.message = error?.error?.detail || 'Could not approve this cover letter.'; });
   }
 
@@ -384,6 +335,7 @@ export class ResumeLabComponent implements OnInit {
         this.resumes = this.resumes.map(resume => resume.id === id ? result.resume : resume);
         this.designDirty = false;
         this.message = 'Design saved. Your next PDF uses these settings. Review before approving.';
+        this.documentsChanged.emit();
       }
     }, error: error => {
       if (request !== this.designRequest || this.selected?.id !== id) return;

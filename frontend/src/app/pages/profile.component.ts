@@ -1,3 +1,4 @@
+import { OnboardingWizardComponent } from '../onboarding/onboarding-wizard.component';
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
@@ -8,16 +9,17 @@ import { RealtimeService } from '../services/realtime.service';
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, OnboardingWizardComponent],
   template: `
     <section class="page">
+      <app-onboarding-wizard *ngIf="showInterview" (closed)="showInterview = false; load()"></app-onboarding-wizard>
       <div class="page-head">
         <div>
           <p class="eyebrow">Candidate intelligence</p>
           <h1>The system should know the whole story.</h1>
           <p class="page-intro">Build a truthful, living model of your experience, capabilities, goals, constraints, and preferences.</p>
         </div>
-        <div class="action-row"><button class="btn-primary" type="button" *ngIf="profile && !profile.onboarding_completed_at" (click)="resumeOnboarding()">✦ Continue guided setup</button><button class="btn-secondary" type="button" (click)="load()">↻ Refresh</button></div>
+        <div class="action-row"><button class="btn-primary" type="button" (click)="resumeOnboarding()">Review my experience</button><button class="btn-secondary" type="button" (click)="load()">↻ Refresh</button></div>
       </div>
 
       <div class="summary-strip">
@@ -251,9 +253,9 @@ export class ProfileComponent implements OnInit, OnDestroy {
 
   normalizedThreshold(): number { return 80; }
 
+  showInterview = false;
   resumeOnboarding(): void {
-    sessionStorage.removeItem('forth_onboarding_dismissed');
-    window.location.reload();
+    this.showInterview = true;
   }
 
   saveProfile(): void {

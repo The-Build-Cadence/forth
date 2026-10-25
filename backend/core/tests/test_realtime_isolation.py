@@ -32,3 +32,17 @@ class RealtimeIsolationTests(TransactionTestCase):
             self.assertEqual(await socket.receive_json_from(), {'private': 'owner'})
             await socket.disconnect()
         async_to_sync(scenario)()
+
+    @override_settings(ALLOWED_HOSTS=['forth.example'])
+    def test_websocket_origin_boundary_rejects_foreign_sites(self):
+        from channels.security.websocket import AllowedHostsOriginValidator
+        owner = get_user_model().objects.create_user(username='ws-origin')
+        token = str(AccessToken.for_user(owner))
+        app = AllowedHostsOriginValidator(RealtimeConsumer.as_asgi())
+        async def scenario():
+            for origin, expected in [(b'https://evil.example', False), (b'https://forth.example', True)]:
+                socket = WebsocketCommunicator(app, f'/ws/realtime/?token={token}', headers=[(b'origin', origin)])
+                connected, _ = await socket.connect()
+                self.assertEqual(connected, expected)
+                await socket.disconnect()
+        async_to_sync(scenario)()

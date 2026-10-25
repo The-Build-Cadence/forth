@@ -50,6 +50,7 @@ class OwnerScopedRelationsMixin:
 
 
 class RegistrationSerializer(serializers.Serializer):
+    invite_code = serializers.CharField(required=False, allow_blank=True, write_only=True, max_length=200)
     # Django's default username field is 150 characters; signup stores the
     # normalized email there so the same value can be used at sign-in.
     email = serializers.EmailField(max_length=150)
@@ -63,6 +64,11 @@ class RegistrationSerializer(serializers.Serializer):
         return email
 
     def validate(self, attrs):
+        import secrets
+        from django.conf import settings
+        invite = attrs.pop('invite_code', '')
+        if settings.FORTH_BETA_INVITE_CODE and not secrets.compare_digest(invite, settings.FORTH_BETA_INVITE_CODE):
+            raise serializers.ValidationError({'invite_code': 'Enter the invitation code shared with you.'})
         User = get_user_model()
         candidate = User(username=attrs['email'], email=attrs['email'])
         try:
@@ -98,6 +104,17 @@ class ProfileDocumentSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        upload = attrs.get('upload')
+        if upload:
+            from core.storage_limits import require_storage_space
+            if upload.size > 15 * 1024 * 1024:
+                raise serializers.ValidationError({'upload': 'Files must be 15 MB or smaller.'})
+            try:
+                require_storage_space(upload.size)
+            except ValueError as exc:
+                raise serializers.ValidationError({'upload': str(exc)}) from exc
+        if len(str(attrs.get('raw_text', '') or '')) > 1_000_000:
+            raise serializers.ValidationError({'raw_text': 'Pasted text must be at most one million characters.'})
         if attrs.get('kind', getattr(self.instance, 'kind', 'note')) != 'resume':
             return attrs
         upload = attrs.get('upload')
@@ -209,6 +226,23 @@ class CandidatePreferenceSerializer(serializers.ModelSerializer):
 
 class JobSourceSerializer(serializers.ModelSerializer):
     job_count = serializers.IntegerField(read_only=True)
+
+    def create(self, validated_data):
+        if 'config' not in validated_data:
+            validated_data['config'] = self.validate_config({})
+        return super().create(validated_data)
+
+    def validate_config(self, value):
+        from .domain.search_criteria import static_search_criteria
+
+        if not isinstance(value, dict):
+            raise serializers.ValidationError('Search configuration must be an object.')
+        if 'adaptive_search' in value and not isinstance(value['adaptive_search'], bool):
+            raise serializers.ValidationError('adaptive_search must be a boolean.')
+        previous = self.instance.config if self.instance else {}
+        value = {**value, 'adaptive_search': value.get('adaptive_search', previous.get('adaptive_search', False))}
+        value['static_criteria'] = previous.get('static_criteria', static_search_criteria(self.context['request'].user))
+        return value
 
     class Meta:
         model = JobSource
@@ -324,10 +358,17 @@ class JobMatchSummarySerializer(serializers.ModelSerializer):
 
 
 class JobPostingSerializer(OwnerScopedRelationsMixin, serializers.ModelSerializer):
+    document_status = serializers.SerializerMethodField()
+
+    def get_document_status(self, obj):
+        from .domain.application_journey import document_status
+
+        return document_status(obj)
+
     has_materials = serializers.SerializerMethodField()
 
     def get_has_materials(self, obj):
-        return Resume.objects.filter(owner=obj.owner, target_job=obj).exists()
+        return Resume.objects.filter(owner=obj.owner, target_job=obj, kind='tailored').exists() or CoverLetter.objects.filter(owner=obj.owner, target_job=obj).exists()
 
     match = JobMatchSerializer(read_only=True)
     application = serializers.SerializerMethodField()
@@ -343,7 +384,7 @@ class JobPostingSerializer(OwnerScopedRelationsMixin, serializers.ModelSerialize
             'source_url', 'application_url', 'status', 'posted_at',
             'canonical_url', 'source_external_id', 'last_seen_at', 'expires_at',
             'freshness_status', 'discovered_at', 'created_at', 'updated_at', 'match', 'application',
-            'requirements', 'versions', 'generation_instructions', 'materials_status', 'materials_started_at', 'has_materials', 'embedding_model', 'embedding_provider',
+            'requirements', 'versions', 'generation_instructions', 'materials_status', 'materials_started_at', 'has_materials', 'document_status', 'embedding_model', 'embedding_provider',
             'embedding_updated_at',
         ]
         read_only_fields = [
@@ -398,9 +439,14 @@ class JobPostingListSerializer(serializers.ModelSerializer):
 
 
 class JobImportSerializer(serializers.Serializer):
-    text = serializers.CharField()
+    text = serializers.CharField(required=False, allow_blank=True, max_length=100000)
     source_url = serializers.URLField(required=False, allow_blank=True)
     source = serializers.PrimaryKeyRelatedField(queryset=JobSource.objects.none(), required=False, allow_null=True)
+
+    def validate(self, attrs):
+        if not attrs.get('text') and not attrs.get('source_url'):
+            raise serializers.ValidationError('Paste a job description or enter a public job link.')
+        return attrs
 
     def __init__(self, *args, **kwargs):
         owner = kwargs.pop('owner', None)

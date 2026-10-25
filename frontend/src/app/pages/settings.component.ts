@@ -1,7 +1,10 @@
+import { HttpClient } from '@angular/common/http';
+import { AuthService } from '../services/auth.service';
+import { environment } from '../../environments/environment';
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ApiService } from '../services/api.service';
 import { UsageIndicatorComponent } from '../usage-indicator.component';
 
@@ -15,8 +18,8 @@ import { UsageIndicatorComponent } from '../usage-indicator.component';
       <p class="feedback-banner" *ngIf="message" role="status">{{ message }}</p>
       <ng-container *ngIf="config; else loading">
         <section class="panel settings-panel"><h2>Account</h2><p>{{ config.name }} <span class="muted">· {{ config.email }}</span></p><a routerLink="/profile">Edit your career profile and search preferences →</a></section>
-        <section class="panel settings-panel">
-          <div class="panel-head"><div><h2>Your AI</h2><p>Use Forth’s default AI, or connect your OpenAI account and choose a text model.</p></div></div>
+        <details class="panel settings-panel"><summary>Advanced · use your own AI account</summary>
+          <div class="panel-head"><div><h2>AI service</h2><p>Use Forth’s default AI, or connect your OpenAI account and choose a text model.</p></div></div>
           <label class="toggle-row"><input type="checkbox" [(ngModel)]="config.use_personal_ai"> Use my OpenAI account</label>
           <p class="field-hint">When enabled, your key powers text generation and embeddings, including scheduled work and MCP actions. OpenAI bills your account directly. Embeddings stay on {{ config.embedding_model }} so existing matches remain compatible.</p>
           <div class="edit-grid">
@@ -26,9 +29,10 @@ import { UsageIndicatorComponent } from '../usage-indicator.component';
           </div>
           <div class="action-row"><button type="button" class="btn-secondary" (click)="loadModels()" [disabled]="!config.has_openai_key || busy || checking">{{ checking ? 'Checking…' : 'Verify saved key & list models' }}</button><button type="button" class="btn-secondary" (click)="removeKey()" [disabled]="!config.has_openai_key || busy">Remove saved key</button></div>
           <p class="field-hint" *ngIf="models.length">Key verified. {{ models.length }} model IDs found. Not every model supports the same features; you can also enter an exact model ID.</p>
-        </section>
+        </details>
         <section class="panel settings-panel"><h2>Default material instructions</h2><p>Applied to new resumes, cover letters, and application answers. An opportunity can override these defaults.</p><label>Writing and design instructions<textarea rows="5" maxlength="6000" [(ngModel)]="config.generation_instructions" placeholder="Use a minimal layout, accent #177d69, concise bullets, and a warm, direct tone."></textarea></label><p class="field-hint">Styles: modern, classic, minimal. Layout: single or two columns. Fonts: Helvetica-style sans, Calibri-style sans, or serif. Paper: Letter or A4. Specify a hex accent and up to three pages. Saved instructions apply to new versions; use Resume Studio’s designer to restyle an existing resume.</p></section>
         <div class="action-row settings-save"><button class="btn-primary" type="button" (click)="save()" [disabled]="busy">{{ busy ? 'Saving…' : 'Save settings' }}</button></div>
+        <details class="panel settings-panel"><summary>Privacy & account deletion</summary><p><a routerLink="/privacy">How Forth uses your information</a></p><p>Deleting your account permanently removes your workspace and stored files from the active service. This cannot be undone. Backups follow the operator’s retention policy.</p><label>Current password<input type="password" autocomplete="current-password" [(ngModel)]="deletePassword"></label><label>Type DELETE to confirm<input [(ngModel)]="deleteConfirmation" autocomplete="off"></label><button class="btn-secondary" (click)="deleteAccount()" [disabled]="deleting || deleteConfirmation !== 'DELETE' || !deletePassword">{{ deleting ? 'Deleting account…' : 'Delete my account permanently' }}</button><p *ngIf="deleteError" role="alert">{{ deleteError }}</p></details>
       </ng-container>
       <ng-template #loading><p>{{ loadFailed ? 'Settings could not be loaded.' : 'Loading settings…' }}</p><button *ngIf="loadFailed" class="btn-secondary" (click)="load()">Try again</button></ng-template>
     </section>
@@ -49,7 +53,13 @@ export class SettingsComponent implements OnInit {
   busy = false;
   checking = false;
   loadFailed = false;
-  constructor(private api: ApiService) {}
+  deletePassword = ''; deleteConfirmation = ''; deleting = false; deleteError = '';
+  constructor(private api: ApiService, private http: HttpClient, private auth: AuthService, private router: Router) {}
+  deleteAccount(): void {
+    if (this.deleting || this.deleteConfirmation !== 'DELETE') return;
+    this.deleting = true; this.deleteError = '';
+    this.http.post(`${environment.apiBaseUrl}/account/delete/`, {password: this.deletePassword, confirmation: this.deleteConfirmation}).subscribe({next: () => { this.auth.logout(); this.router.navigate(['/']); }, error: error => { this.deleting = false; this.deletePassword = ''; this.deleteError = error?.error?.detail || 'Could not delete your account. Please try again.'; }});
+  }
   ngOnInit(): void { this.load(); }
   load(): void { this.loadFailed = false; this.api.accountSettings().subscribe({next: data => this.config = data, error: () => this.loadFailed = true}); }
   save(): void {

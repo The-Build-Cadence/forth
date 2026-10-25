@@ -93,6 +93,8 @@ class UsageTests(TestCase):
                 self.generate()
         self.assertEqual(list(ProviderUsage.objects.order_by('id').values_list('owner_id', 'origin')),
                          [(self.bob.pk, 'scheduled'), (self.alice.pk, 'web')])
+        run.status = 'succeeded'
+        run.save(update_fields=['status'])
         with patch('core.tasks.execute_source_run_task.delay') as delay:
             refresh_enabled_sources_task()
         self.assertEqual(delay.call_args.kwargs['origin'], 'scheduled')
@@ -137,6 +139,7 @@ from unittest import skipUnless
 
 
 @skipUnless(connection.vendor == 'postgresql', 'Independent accounting commits require PostgreSQL')
+@override_settings(USAGE_DATABASE_ALIAS='usage')
 class PostgresUsageDurabilityTests(TransactionTestCase):
     databases = {'default', 'usage'}
 

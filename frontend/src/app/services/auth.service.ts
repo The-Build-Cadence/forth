@@ -40,8 +40,8 @@ export class AuthService {
     );
   }
 
-  signup(email: string, password: string): Observable<RegistrationResponse> {
-    return this.http.post<RegistrationResponse>(`${environment.apiBaseUrl}/auth/signup/`, { email, password }).pipe(
+  signup(email: string, password: string, invite_code = ''): Observable<RegistrationResponse> {
+    return this.http.post<RegistrationResponse>(`${environment.apiBaseUrl}/auth/signup/`, { email, password, invite_code }).pipe(
       tap((tokens) => {
         sessionStorage.removeItem('forth_onboarding_dismissed');
         localStorage.setItem(this.accessKey, tokens.access);

@@ -8,10 +8,12 @@ import socket
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from types import SimpleNamespace
 from xml.etree import ElementTree
 from urllib.parse import urlencode, urlparse, urljoin
 
 import requests
+from core.public_http import public_get, public_addresses
 from django.conf import settings
 from django.core.cache import cache
 from django.db import transaction
@@ -21,7 +23,7 @@ from django.utils import timezone
 from core.ai import clean_text, embed_text_result, keywords, stable_hash
 from core.domain.embeddings import profile_embedding_text, refresh_profile_embedding, vector_similarity
 from core.domain.discovery_quality import cheap_assessment, role_variants
-from core.models import JobPosting, JobPostingVersion, JobRequirement, JobSource, SourceRun, SourceSearchQuery
+from core.models import JobPosting, JobPostingVersion, JobRequirement, JobSource, ProfileFact, SourceRun, SourceSearchQuery
 
 
 def _plain(value: Any) -> str:
@@ -60,8 +62,10 @@ class SourceConnector:
 
     def get_json(self, url: str) -> Any:
         validate_public_url(url)
-        response = requests.get(url, timeout=self.timeout, headers={'User-Agent': 'Forth/1.0'})
+        response = public_get(url, timeout=self.timeout, headers={'User-Agent': 'Forth/1.0'})
         response.raise_for_status()
+        if response.is_redirect:
+            raise ValueError('Feed redirects are not supported.')
         return response.json()
 
 
@@ -82,7 +86,7 @@ class BraveSearchConnector(SourceConnector):
         exploration history survive copy changes and prevents a scheduled run
         from repeatedly spending API calls on the same keyword combination.
         """
-        configured = self.config.get('queries') or []
+        configured = [] if self.config.get('adaptive_search') is True else self.config.get('queries') or []
         if isinstance(configured, str):
             configured = configured.split('\n')
         configured = [clean_text(value) for value in configured if clean_text(value)]
@@ -142,9 +146,17 @@ class BraveSearchConnector(SourceConnector):
 
     def _profile_query_candidates(self) -> list[dict[str, Any]]:
         profile = getattr(self.source.owner, 'candidate_profile', None)
+        adaptive = self.config.get('adaptive_search') is True
+        if not adaptive and 'static_criteria' in self.config:
+            profile = SimpleNamespace(**self.config['static_criteria'])
         if not profile:
             return []
         variants = role_variants(getattr(profile, 'target_roles', None) or [])
+        specialties = ['']
+        if adaptive:
+            facts = ProfileFact.objects.filter(owner=self.source.owner, fact_type='skill').exclude(confidence='low').exclude(lifecycle__in=['rejected', 'archived']).order_by('-verified_by_user', '-updated_at', 'id')
+            skills = list(dict.fromkeys(clean_text(fact.normalized_value or fact.title) for fact in facts))
+            specialties = [skill for skill in skills if skill and len(skill) <= 60][:3] + ['']
         location = clean_text(getattr(profile, 'location', '')).split(',', 1)[0]
         work_modes = [str(mode).lower() for mode in (getattr(profile, 'work_modes', None) or [])]
         # Keep every automated query geographically intentional. An unscoped
@@ -168,9 +180,12 @@ class BraveSearchConnector(SourceConnector):
                     # Verify the actual posting; date-filtered queries are a
                     # later exploration lane, never the only route to a job.
                     for freshness in ['', 'pm']:
-                        components = {'strategy': 'profile-v3', 'role': role, 'domain': domain, 'location': location_term.lower(), 'freshness': freshness, 'tier': (1 if domain else 0) + (2 if freshness else 0)}
-                        query = ' '.join(part for part in [f'"{role}"', location_term, 'jobs', f'site:{domain}' if domain else '-site:linkedin.com -site:indeed.com'] if part)
-                        candidates.append({'query': query, 'components': components})
+                        for specialty in specialties:
+                            components = {'strategy': 'adaptive-v1' if adaptive else 'profile-v3', 'role': role, 'domain': domain, 'location': location_term.lower(), 'freshness': freshness, 'tier': (1 if domain else 0) + (2 if freshness else 0) + (0 if specialty or not adaptive else 1)}
+                            if specialty:
+                                components['specialty'] = specialty.lower()
+                            query = ' '.join(part for part in [f'"{role}"', specialty, location_term, 'jobs', f'site:{domain}' if domain else '-site:linkedin.com -site:indeed.com'] if part)
+                            candidates.append({'query': query, 'components': components})
         return candidates
 
     def _record_query(self, plan: dict[str, Any], result_count: int) -> None:
@@ -213,11 +228,12 @@ class BraveSearchConnector(SourceConnector):
             self.events, self.query_plans = [], []
             self.emit_progress({'level': 'notice', 'message': 'No untried searches are due. Add target roles or focused queries, or wait for the query cooldown.'})
             return []
-        country = clean_text(self.config.get('country') or 'CA').upper()[:2]
+        country = 'ALL' if self.config.get('adaptive_search') is True else clean_text(self.config.get('country') or 'CA').upper()[:3]
         count = max(1, min(self.RESULTS_PER_PAGE, int(self.config.get('results_per_query') or self.RESULTS_PER_PAGE)))
         records: list[SourceRecord] = []
         self.events = []
         self.query_plans = []
+        self.emit_progress({'level': 'criteria', 'message': 'Adaptive search: using current profile roles, skills and locations.' if self.config.get('adaptive_search') is True else 'Static search: using saved search criteria.'})
         seen_urls: set[str] = set()
         for plan in plans:
             query = plan['query']
@@ -427,7 +443,7 @@ class RSSConnector(SourceConnector):
         if not url:
             raise ValueError('RSS sources require config.url.')
         validate_public_url(url)
-        response = requests.get(url, timeout=self.timeout, headers={'User-Agent': 'Forth/1.0'})
+        response = public_get(url, timeout=self.timeout, headers={'User-Agent': 'Forth/1.0'})
         response.raise_for_status()
         root = ElementTree.fromstring(response.content)
         records = []
@@ -480,17 +496,7 @@ def validate_slug(value: str, label: str) -> None:
 
 
 def validate_public_url(url: str) -> None:
-    parsed = urlparse(url)
-    if parsed.scheme not in {'http', 'https'} or not parsed.hostname:
-        raise ValueError('Source URLs must use http or https.')
-    try:
-        addresses = {item[4][0] for item in socket.getaddrinfo(parsed.hostname, parsed.port or 443, type=socket.SOCK_STREAM)}
-    except socket.gaierror as exc:
-        raise ValueError('The source hostname could not be resolved.') from exc
-    for address in addresses:
-        ip = ipaddress.ip_address(address)
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
-            raise ValueError('Source URLs must resolve to a public network address.')
+    public_addresses(url)
 
 
 def connector_for(source: JobSource) -> SourceConnector:
@@ -569,7 +575,7 @@ def _verify_job_page(record: SourceRecord, *, followed_employer: bool = False) -
     try:
         for _ in range(5):
             validate_public_url(url)
-            with requests.get(url, timeout=8, allow_redirects=False, stream=True, headers={'User-Agent': 'Forth/1.0'}) as response:
+            with public_get(url, timeout=8, allow_redirects=False, stream=True, headers={'User-Agent': 'Forth/1.0'}) as response:
                 if response.status_code in {404, 410}:
                     return 'closed', 'The job page is no longer available.'
                 if response.is_redirect:

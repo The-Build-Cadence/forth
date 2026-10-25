@@ -27,7 +27,7 @@ fi
 if [[ "$APP_ROLE" == "worker" ]]; then
   exec celery -A forth worker -l info -Q "${CELERY_WORKER_QUEUES:-celery}" --concurrency="${CELERY_WORKER_CONCURRENCY:-2}"
 elif [[ "$APP_ROLE" == "beat" ]]; then
-  exec celery -A forth beat -l info
+  exec celery -A forth beat -l info --schedule=/app/data/celerybeat-schedule
 else
-  exec daphne -b 0.0.0.0 -p 8000 forth.asgi:application
+  exec daphne --access-log /dev/null -b 0.0.0.0 -p 8000 forth.asgi:application
 fi

@@ -473,7 +473,7 @@ def _build_onboarding_snapshot(owner) -> dict[str, Any]:
     preference_count = CandidatePreference.objects.filter(owner=owner).count()
     question = None
 
-    if profile.onboarding_completed_at:
+    if profile.onboarding_completed_at and not state.get('quick_start'):
         step_id = 'review'
     elif not state.get('started'):
         step_id = 'welcome'
@@ -499,7 +499,7 @@ def _build_onboarding_snapshot(owner) -> dict[str, Any]:
         prompt = question['prompt']
     readiness = _onboarding_readiness(owner, state)
     return {
-        'needs_onboarding': profile.onboarding_completed_at is None,
+        'needs_onboarding': profile.onboarding_completed_at is None or bool(state.get('quick_start')),
         'step': {'id': step_id, 'title': title, 'prompt': prompt, 'question': question},
         'progress': max(5, min(100, readiness['score'] if step_id != 'welcome' else 5)),
         'readiness': readiness,
@@ -718,6 +718,7 @@ def answer_onboarding(owner, *, step: str, answers: dict[str, Any]) -> dict[str,
             if not _required_interview_complete(owner, state):
                 raise ValueError(f"Complete these profile signals first: {', '.join(readiness['missing']) or 'the remaining interview questions'}.")
             profile.onboarding_completed_at = timezone.now()
+            state['quick_start'] = False
 
         profile.onboarding_state = state
         profile.last_reviewed_at = timezone.now()

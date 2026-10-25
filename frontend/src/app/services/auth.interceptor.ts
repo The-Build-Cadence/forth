@@ -9,7 +9,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
   const router = inject(Router);
   const session = auth.getRefreshToken();
   const token = localStorage.getItem('forth_access') || '';
-  const isAuthRequest = req.url.includes('/auth/login/') || req.url.includes('/auth/signup/') || req.url.includes('/auth/refresh/');
+  const isAuthRequest = req.url.includes('/auth/login/') || req.url.includes('/auth/signup/') || req.url.includes('/auth/refresh/') || req.url.includes('/auth/recovery/') || req.url.includes('/auth/reset/');
   const guardSession = map((event: any) => {
     if (!isAuthRequest && auth.getRefreshToken() !== session) throw new Error('Session changed during request.');
     return event;

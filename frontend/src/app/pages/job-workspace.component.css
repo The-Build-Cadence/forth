@@ -1,0 +1,17 @@
+:host { display: block; min-width: 0; }
+.job-workspace { max-width: 1300px; margin: auto; }
+.page-head { margin-top: 1rem; }
+.page-head h1 { font-size: clamp(1.5rem, 3vw, 2.3rem); overflow-wrap: anywhere; }
+.next-step { margin: 1rem 0; }
+.journey-status, .action-row, .secondary-actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+.journey { display: flex; list-style: none; gap: .5rem; padding: 0; margin: 1.5rem 0; }
+.journey li { flex: 1; border-top: 3px solid #dce5df; padding-top: .6rem; font-size: .85rem; }
+.journey li.done { border-color: #27775a; }
+.tabs { flex-wrap: wrap; }
+fieldset { border: 0; padding: 0; min-width: 0; }
+label { display: block; margin: 1rem 0; }
+.tracking-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1rem; }
+.history { padding-left: 1.2rem; }.history li { margin: 1rem 0; }.history time { font-size: .8rem; color: #66786b; }
+details summary { cursor: pointer; }.secondary-actions { padding: 1rem 0; }
+.submission { margin: 1rem 0; }.submission input { max-width: 22rem; }
+@media (max-width: 650px) { .tracking-grid { grid-template-columns: 1fr; }.journey { flex-direction: column; gap: .6rem; }.journey li { border-top: 0; border-left: 3px solid #dce5df; padding: .25rem .6rem; } }

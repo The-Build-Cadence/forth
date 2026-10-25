@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { Subject, Subscription, takeUntil } from 'rxjs';
 import { ApiService, JobSource, SourceRun } from '../services/api.service';
@@ -7,37 +8,46 @@ import { RealtimeService } from '../services/realtime.service';
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, RouterLink],
   template: `
     <section class="page">
       <div class="page-head">
         <div>
           <p class="eyebrow">Discovery</p>
-          <h1>A quiet, reliable discovery engine.</h1>
-          <p class="page-intro">Search the open web from your role and location brief, learn from each pass, and keep a complete audit trail.</p>
+          <h1>Find your next opportunity.</h1>
+          <p class="page-intro">Search with your saved preferences. Your required conditions stay in place.</p>
         </div>
         <button class="btn-secondary" type="button" (click)="load()">↻ Refresh</button>
       </div>
 
+      <section class="panel setup-card">
+        <h2>Your search, ready to go</h2><p>Find jobs using your target roles, location and work preferences.</p>
+        <div class="setup-actions"><button class="btn-primary" (click)="startSearch()" [disabled]="saving || !!activeRun">{{ activeRun ? 'Finding jobs…' : saving ? 'Starting…' : 'Find jobs for me' }}</button><a class="btn-secondary" routerLink="/start">Edit search preferences</a><a class="text-link" routerLink="/matches" [queryParams]="{tab: 'import'}">Add a job I already found →</a></div>
+        <p *ngIf="braveSource" class="field-hint">Daily or scheduled searches are {{ braveSource.enabled ? 'on' : 'paused' }}.</p>
+        <button *ngIf="braveSource" class="text-button" (click)="toggleSchedule()" [disabled]="saving">{{ braveSource.enabled ? 'Pause scheduled searches' : 'Resume scheduled searches' }}</button>
+      </section>
+      <details class="panel setup-card"><summary>Advanced search settings</summary>
       <section class="panel brave-panel">
-        <div class="panel-head"><div><p class="eyebrow">Brave Search</p><h2>Set the discovery cadence</h2><p>Queries come from target roles and location unless you add focused variations.</p></div>
+        <div class="panel-head"><div><p class="eyebrow">Brave Search</p><h2>Set the discovery cadence</h2><p>Choose whether searches follow your evolving profile or use saved criteria.</p></div>
           <div class="button-row"><button class="btn-secondary" type="button" *ngIf="braveSource" (click)="run(braveSource)" [disabled]="isRunning(braveSource)">{{ isRunning(braveSource) ? 'Searching…' : 'Search now' }}</button><button class="btn-primary" type="button" (click)="createBrave()" [disabled]="saving"><span class="spinner" *ngIf="saving"></span>{{ braveSource ? 'Save schedule' : 'Activate web discovery' }}</button></div>
         </div>
         <div class="schedule-grid">
+          <label class="wide"><span><input type="checkbox" [(ngModel)]="adaptiveSearch" name="adaptiveSearch"> Automatically adapt searches to my profile</span><span class="field-hint">Uses your current target roles, evidenced skills, location and work preferences each run. Focused queries and country code stay saved for static mode. Required conditions and score thresholds still apply. Save settings to apply changes.</span></label>
           <label>Repeat every
             <select [(ngModel)]="scheduleMinutes" name="scheduleMinutes"><option [ngValue]="60">hour</option><option [ngValue]="360">6 hours</option><option [ngValue]="720">12 hours</option><option [ngValue]="1440">day</option></select>
           </label>
-          <label>Country code<input [(ngModel)]="braveCountry" name="braveCountry" maxlength="2"></label>
+          <label>Country code<input [(ngModel)]="braveCountry" name="braveCountry" maxlength="3" [disabled]="adaptiveSearch"></label>
           <label>Jobs to save per run<input type="number" [(ngModel)]="maxCandidates" name="maxCandidates" min="1" max="20" step="1"><span class="field-hint">Up to 20 matching jobs. Each search query requests Brave’s maximum of 20 results; duplicates and unsuitable roles are still filtered out.</span></label>
           <label>Minimum discovery fit
             <div class="threshold-control"><input type="range" [(ngModel)]="minimumFitScore" name="minimumFitScore" min="20" max="90" step="5"><output>{{ minimumFitScore }}</output></div>
             <span class="field-hint">Requires a matching role, location and work mode. Equivalent titles receive equal credit; embeddings refine the score.</span>
           </label>
-          <label class="wide">Focused query variations <span class="field-hint">one per line, optional</span><textarea rows="3" [(ngModel)]="braveQueries" name="braveQueries" placeholder="e.g. senior platform engineer Toronto jobs"></textarea><span class="field-hint">Results are deduplicated and ranked by embedding similarity and role keywords before anything is saved. Discovery uses no LLM completions.</span></label>
+          <label class="wide">Focused query variations <span class="field-hint">one per line, optional</span><textarea rows="3" [(ngModel)]="braveQueries" name="braveQueries" [disabled]="adaptiveSearch" placeholder="e.g. senior platform engineer Toronto jobs"></textarea><span class="field-hint">Static mode uses these queries, or the role and location criteria saved when the search was configured. Edit these queries to change static searches. Discovery uses no LLM completions.</span></label>
         </div>
         <p class="muted" *ngIf="braveSource">{{ braveSource.last_message || 'Ready for its first search.' }}</p>
       </section>
 
+      </details>
       <section class="panel run-visual" *ngIf="activeRun || latestRun">
         <div class="panel-head"><div><h2>{{ activeRun ? 'Discovery in progress' : 'Discovery run' }}</h2><p>{{ activeRun ? 'Follow each decision as it happens.' : runSummary(latestRun!) }}</p></div></div>
         <div class="flow-header"><p><span>Queries</span><b>{{ searchCount() }}</b></p><p><span>Direct pages</span><b>{{ (activeRun || latestRun)?.discovered_count || 0 }}</b></p><p><span>Qualified</span><b>{{ shortlistedCount() }}</b></p><p><span>Imported</span><b>{{ (activeRun || latestRun)?.imported_count || 0 }}</b></p></div>
@@ -61,8 +71,9 @@ import { RealtimeService } from '../services/realtime.service';
         </div>
       </section>
 
-      <p class="muted">{{ message }}</p>
+      <p class="feedback-banner" role="status" *ngIf="message">{{ message }}</p>
 
+      <details class="panel setup-card"><summary>Search history</summary>
       <section class="panel">
         <div class="panel-head"><div><h2>Run history</h2><p>Every sourcing pass, including the searches and evaluation stages.</p></div></div>
         <div class="list-row" *ngFor="let run of runs">
@@ -72,6 +83,7 @@ import { RealtimeService } from '../services/realtime.service';
         </div>
         <div class="empty-state small" *ngIf="!runs.length"><span class="empty-icon">⌁</span><h3>No runs yet</h3><p>Trigger a source manually or wait for its schedule.</p></div>
       </section>
+      </details>
     </section>
   `,
   styles: [`
@@ -100,6 +112,7 @@ export class SourcesComponent implements OnInit, OnDestroy {
   scheduleMinutes = 360;
   braveCountry = 'CA';
   braveQueries = '';
+  adaptiveSearch = false;
   minimumFitScore = 45;
   maxCandidates = 20;
   message = '';
@@ -149,6 +162,7 @@ export class SourcesComponent implements OnInit, OnDestroy {
         this.scheduleMinutes = Number(this.braveSource.config?.schedule_minutes || 360);
         this.braveCountry = this.braveSource.config?.country || 'CA';
         this.braveQueries = (this.braveSource.config?.queries || []).join('\n');
+        this.adaptiveSearch = this.braveSource.config?.adaptive_search === true;
         this.minimumFitScore = Number(this.braveSource.config?.min_triage_score || 45);
         this.maxCandidates = Math.max(1, Math.min(20, Number(this.braveSource.config?.max_candidates || 20)));
       }
@@ -165,12 +179,22 @@ export class SourcesComponent implements OnInit, OnDestroy {
     });
   }
 
+  startSearch(): void {
+    this.saving = true; this.message = '';
+    this.api.startDiscovery().pipe(takeUntil(this.destroy$)).subscribe({next: run => { this.saving = false; this.activeRun = run; this.latestRun = run; this.watchRun(run.id); this.load(); }, error: error => { this.saving = false; this.message = error?.error?.detail || 'Search could not start. Please try again.'; }});
+  }
+  toggleSchedule(): void {
+    if (!this.braveSource) return;
+    this.saving = true;
+    this.api.updateSource(this.braveSource.id, {enabled: !this.braveSource.enabled}).pipe(takeUntil(this.destroy$)).subscribe({next: () => { this.saving = false; this.load(); }, error: () => { this.saving = false; this.message = 'Could not change the schedule. Please try again.'; }});
+  }
+
   createBrave(): void {
     if (!Number.isInteger(this.maxCandidates) || this.maxCandidates < 1 || this.maxCandidates > 20) { this.message = 'Choose between 1 and 20 jobs per run.'; return; }
-    const config = { ...this.braveSource?.config, connector: 'brave', schedule_minutes: this.scheduleMinutes, country: this.braveCountry.trim().toUpperCase(), queries: this.braveQueries.split('\n').map((q) => q.trim()).filter(Boolean), results_per_query: 20, max_candidates: this.maxCandidates, min_triage_score: this.minimumFitScore };
+    const config = { ...this.braveSource?.config, connector: 'brave', adaptive_search: this.adaptiveSearch, schedule_minutes: this.scheduleMinutes, country: this.braveCountry.trim().toUpperCase(), queries: this.braveQueries.split('\n').map((q) => q.trim()).filter(Boolean), results_per_query: 20, max_candidates: this.maxCandidates, min_triage_score: this.minimumFitScore };
     this.saving = true;
     const request = this.braveSource
-      ? this.api.updateSource(this.braveSource.id, { config, enabled: true })
+      ? this.api.updateSource(this.braveSource.id, { config, enabled: this.braveSource.enabled })
       : this.api.createSource({ name: 'Brave web discovery', kind: 'brave', config, enabled: true });
     request.subscribe({ next: () => { this.saving = false; this.message = 'Brave discovery schedule saved.'; this.load(); }, error: (error) => { this.saving = false; this.message = error?.error?.detail || 'Could not save the Brave schedule.'; } });
   }

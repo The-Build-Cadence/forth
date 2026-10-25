@@ -104,6 +104,9 @@ class OwnedViewSet(viewsets.ModelViewSet):
 
 
 class RegistrationView(APIView):
+    from rest_framework.throttling import ScopedRateThrottle
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'signup'
     permission_classes = [AllowAny]
     authentication_classes = []
 
@@ -391,9 +394,17 @@ class JobPostingViewSet(OwnedViewSet):
     def import_job(self, request):
         serializer = JobImportSerializer(data=request.data, owner=request.user)
         serializer.is_valid(raise_exception=True)
+        text = serializer.validated_data.get('text', '')
+        if not text:
+            from .domain.sourcing import SourceRecord, _verify_job_page
+            record = SourceRecord(external_id='', title='Job posting', company='', location='', description='', source_url=serializer.validated_data['source_url'], application_url=serializer.validated_data['source_url'])
+            problem = _verify_job_page(record)
+            if problem or not record.description:
+                return Response({'detail': 'We couldn’t read this posting. Paste the full job description instead; your link is still saved in the form.'}, status=400)
+            text = '\n'.join([record.title, record.company, record.location, record.description])
         job = import_job_posting(
             request.user,
-            text=serializer.validated_data['text'],
+            text=text,
             source_url=serializer.validated_data.get('source_url', ''),
             source=serializer.validated_data.get('source'),
         )
@@ -475,12 +486,10 @@ class JobPostingViewSet(OwnedViewSet):
     @action(detail=True, methods=['post'])
     def create_application(self, request, pk=None):
         job = self.get_object()
-        application, _ = Application.objects.get_or_create(
-            owner=request.user,
-            job=job,
-            defaults={'status': 'saved', 'notes': ''},
-        )
-        return Response(ApplicationSerializer(application, context={'request': request}).data, status=status.HTTP_201_CREATED)
+        from .domain.application_journey import save_job
+
+        application, created = save_job(request.user, job)
+        return Response(ApplicationSerializer(application, context={'request': request}).data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
     @action(detail=True, methods=['post'])
     def request_preparation(self, request, pk=None):
@@ -508,6 +517,8 @@ class JobPostingViewSet(OwnedViewSet):
     @action(detail=True, methods=['post'])
     def regenerate_materials(self, request, pk=None):
         job = self.get_object()
+        if not (ProfileDocument.objects.filter(owner=request.user, kind='resume', status='ready').exists() or ProfileFact.objects.filter(owner=request.user).exists() or Resume.objects.filter(owner=request.user, kind='canonical').exists()):
+            return Response({'code': 'experience_required', 'detail': 'Add your resume or career experience in My Profile before preparing application documents.'}, status=400)
         from datetime import timedelta
         from django.db import transaction
         with transaction.atomic():
@@ -518,6 +529,14 @@ class JobPostingViewSet(OwnedViewSet):
             job.materials_status = 'queued'
             job.materials_started_at = timezone.now()
             job.save(update_fields=['materials_status', 'materials_started_at', 'updated_at'])
+            from .domain.application_journey import save_job
+
+            application, _ = save_job(request.user, job)
+            Application.objects.filter(pk=application.pk, status__in=['saved', 'review', 'discovered', 'approved']).update(status='preparing', updated_at=timezone.now())
+            ApplicationEvent.objects.create(
+                owner=request.user, application=application, event_type='preparation_started',
+                happened_at=timezone.now(), notes='Document preparation requested. Drafts will need review; nothing has been submitted.',
+            )
         publish_user_event(request.user.id, 'materials_regeneration_queued', {'job_id': job.id})
         try:
             task = regenerate_application_materials_task.delay(job.id)
@@ -568,7 +587,7 @@ class ResumeViewSet(OwnedViewSet):
         if kind:
             qs = qs.filter(kind=kind)
         if job_id:
-            qs = qs.filter(target_job_id=job_id)
+            return qs.filter(target_job_id=job_id).order_by('-created_at', '-id')
         return qs.order_by('-updated_at', '-id')
 
     @action(detail=False, methods=['post'])
@@ -665,7 +684,8 @@ class CoverLetterViewSet(OwnedViewSet):
     def get_queryset(self):
         qs = super().get_queryset()
         job_id = self.request.query_params.get('job')
-        qs = qs.filter(target_job_id=job_id) if job_id else qs
+        if job_id:
+            return qs.filter(target_job_id=job_id).order_by('-version', '-id')
         return qs.order_by('-updated_at', '-id')
 
     @action(detail=True, methods=['get'])
@@ -901,6 +921,8 @@ class StrategyView(APIView):
 
 
 class FrontendAppView(APIView):
+    # SPA routes and assets must never consume API/authentication rate limits.
+    throttle_classes = []
     authentication_classes = []
     permission_classes = []
 

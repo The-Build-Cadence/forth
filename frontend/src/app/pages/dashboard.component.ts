@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ApiService } from '../services/api.service';
 
@@ -11,33 +11,34 @@ import { ApiService } from '../services/api.service';
       <div class="today-hero">
         <div>
           <p class="eyebrow">{{ todayLabel }} · Your daily briefing</p>
-          <h1>Good morning.<br><span>Three decisions can move your search forward.</span></h1>
-          <p>{{ data?.greeting }}</p>
+          <h1>{{ data?.next_action?.title || 'Your next move' }}</h1>
+          <p>{{ data?.next_action?.detail }}</p><a *ngIf="data?.next_action" class="btn-primary" [routerLink]="data.next_action.path" [queryParams]="data.next_action.params">{{ data.next_action.label }} →</a>
         </div>
         <a class="concierge-cta" routerLink="/concierge"><span>✦</span><div><strong>Ask your concierge</strong><small>Delegate or clarify anything</small></div><i>→</i></a>
       </div>
 
-      <div class="signal-strip">
+      <p *ngIf="error" role="alert">{{ error }} <button class="btn-secondary" (click)="load()">Try again</button></p>
+      <div class="signal-strip" *ngIf="data?.setup_complete && (data?.review_count || data?.pending_approvals || data?.followups_due)">
         <a routerLink="/matches"><span class="signal-icon lime">◇</span><div><small>Roles to review</small><strong>{{ data?.review_count || 0 }}</strong></div><i>Fresh, ranked opportunities</i></a>
         <a routerLink="/concierge"><span class="signal-icon coral">!</span><div><small>Decisions waiting</small><strong>{{ data?.pending_approvals || 0 }}</strong></div><i>Your approval is required</i></a>
         <a routerLink="/pipeline"><span class="signal-icon cyan">↗</span><div><small>Follow-ups due</small><strong>{{ data?.followups_due || 0 }}</strong></div><i>Keep conversations moving</i></a>
-        <a routerLink="/profile"><span class="signal-icon violet">◎</span><div><small>Profile confidence</small><strong>{{ data?.profile_health?.completeness || 0 }}%</strong></div><i>{{ data?.profile_health?.unverified_count || 0 }} facts to verify</i></a>
+        <a routerLink="/profile"><span class="signal-icon violet">◎</span><div><small>Profile details</small><strong>{{ data?.profile_health?.completeness || 0 }}%</strong></div><i>{{ data?.profile_health?.unverified_count || 0 }} facts to verify</i></a>
       </div>
 
       <div class="today-grid">
         <section class="panel focus-panel">
           <div class="panel-head"><div><p class="eyebrow">Priority queue</p><h2>The roles worth your attention</h2><p>Already filtered for fit, freshness, and your stated constraints.</p></div><a class="text-link" routerLink="/matches">Review all →</a></div>
-          <a class="focus-job" *ngFor="let job of data?.review_queue; let first = first" routerLink="/matches" [class.lead-job]="first">
+          <a class="focus-job" *ngFor="let job of data?.review_queue; let first = first" [routerLink]="['/matches']" [queryParams]="{job: job.id}" [class.lead-job]="first">
             <div class="company-mark">{{ initials(job.company) }}</div>
             <div class="focus-main"><div><strong>{{ job.title }}</strong><span>{{ job.company || 'Unknown company' }} · {{ job.location || job.remote_policy }}</span></div><p>{{ job.summary }}</p><div><span class="status-chip" title="Checks your saved must-have conditions, such as work authorization, location and work mode. Open the opportunity for reasons; this is not an employer rejection." [class.good]="job.eligibility === 'pass'">{{ job.eligibility === 'pass' ? 'Meets required conditions' : job.eligibility === 'fail' ? 'Required condition mismatch' : 'Needs confirmation' }}</span><span class="status-chip">{{ job.confidence }} confidence</span></div></div>
             <div class="focus-score"><strong>{{ job.score }}</strong><small>fit</small><span>→</span></div>
           </a>
-          <div class="quiet-state" *ngIf="!data?.review_queue?.length"><span>◇</span><strong>Your opportunity queue is empty</strong><p>Run a configured source or import a job description to start ranking roles.</p><a class="btn-primary" routerLink="/sources">Open sources</a></div>
+          <div class="quiet-state" *ngIf="!data?.review_queue?.length"><span>◇</span><strong>Your opportunity queue is empty</strong><p>Find jobs with your saved preferences, or add a posting you already have.</p><a class="btn-primary" routerLink="/sources">Find jobs for me</a><a class="text-link" routerLink="/matches" [queryParams]="{tab: 'import'}">I already have a job in mind →</a></div>
         </section>
 
         <aside class="today-rail">
           <section class="panel profile-pulse">
-            <div class="panel-head"><div><p class="eyebrow">Candidate intelligence</p><h2>Profile pulse</h2></div><strong class="ring" [style.--progress]="data?.profile_health?.completeness || 0">{{ data?.profile_health?.completeness || 0 }}%</strong></div>
+            <div class="panel-head"><div><p class="eyebrow">Your experience</p><h2>Your profile</h2></div><strong class="ring" [style.--progress]="data?.profile_health?.completeness || 0">{{ data?.profile_health?.completeness || 0 }}%</strong></div>
             <div class="profile-question" *ngFor="let question of data?.profile_health?.questions"><span>?</span><p><small>High-value question</small><strong>{{ question }}</strong></p></div>
             <a class="text-link" routerLink="/profile">Strengthen your profile →</a>
           </section>
@@ -52,10 +53,15 @@ import { ApiService } from '../services/api.service';
     </section>
   `,
 })
-export class DashboardComponent implements OnInit {
+export class DashboardComponent implements OnInit, OnDestroy {
   data: any;
   todayLabel = new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(new Date());
   constructor(private api: ApiService) {}
-  ngOnInit(): void { this.api.today().subscribe((data) => this.data = data); }
+  error = '';
+  private timer?: ReturnType<typeof setInterval>;
+  private request?: import('rxjs').Subscription;
+  ngOnInit(): void { this.load(); this.timer = setInterval(() => this.load(), 10000); }
+  ngOnDestroy(): void { clearInterval(this.timer); this.request?.unsubscribe(); }
+  load(): void { this.request?.unsubscribe(); this.request = this.api.today().subscribe({next: data => { this.data = data; this.error = ''; }, error: () => this.error = 'Could not refresh your dashboard.'}); }
   initials(company: string): string { return (company || 'F').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase(); }
 }

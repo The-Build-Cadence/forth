@@ -315,6 +315,8 @@ class AccountSurfaceTests(APITestCase):
             self.client.force_authenticate(self.other)
             response = self.client.get(f'/api/profile/documents/{document.pk}/download/')
             self.assertEqual(response.status_code, 200)
-            response.close()
+            # Consume and close the file without request_finished closing the
+            # PostgreSQL connection inside TestCase's enclosing transaction.
+            self.assertEqual(b''.join(response.streaming_content), b'private contents')
             detail = self.client.get(f'/api/profile/documents/{document.pk}/').data
             self.assertIn(f'/api/profile/documents/{document.pk}/download/', detail['upload'])

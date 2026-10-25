@@ -47,7 +47,7 @@ def ledger():
     from .models import ProviderUsage
     # PostgreSQL gets a separate autocommit connection to the SAME database.
     # Charges survive a surrounding workflow rollback or a worker being killed.
-    alias = 'usage' if connection.vendor == 'postgresql' else 'default'
+    alias = getattr(settings, 'USAGE_DATABASE_ALIAS', 'usage' if connection.vendor == 'postgresql' else 'default')
     return ProviderUsage.objects.using(alias)
 
 

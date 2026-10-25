@@ -20,7 +20,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Pipfile Pipfile.lock ./
-RUN pip install --no-cache-dir pipenv \
+RUN pip install --no-cache-dir --upgrade pip==26.2.1 \
+    && pip install --no-cache-dir pipenv \
     && pipenv sync --system
 
 COPY backend ./backend
@@ -30,7 +31,9 @@ RUN chmod +x /entrypoint.sh \
     && cd /app/backend \
     && python manage.py collectstatic --noinput
 
-ENV PYTHONUNBUFFERED=1
+RUN groupadd --gid 10001 forth && useradd --uid 10001 --gid forth --no-create-home forth
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HOME=/tmp
+USER 10001:10001
 WORKDIR /app/backend
 EXPOSE 8000
 

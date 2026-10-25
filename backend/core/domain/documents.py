@@ -274,6 +274,8 @@ def prepare_application_materials(owner, job: JobPosting, *, application: Applic
 
 
 def _store_artifact(*, owner, title: str, kind: str, content: bytes, filename: str, mime_type: str, application=None, resume=None, cover_letter=None, metadata=None) -> Artifact:
+    from core.storage_limits import require_storage_space
+    require_storage_space(len(content))
     digest = hashlib.sha256(content).hexdigest()
     artifact = Artifact.objects.create(
         owner=owner,

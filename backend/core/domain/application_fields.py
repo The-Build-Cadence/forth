@@ -277,7 +277,7 @@ def prepare_answers(application, *, discover=False):
 
 
 def _public_page(url):
-    import requests
+    from core.public_http import public_get
     from urllib.parse import urljoin, urlparse
     from .sourcing import validate_public_url
     for _ in range(4):
@@ -285,7 +285,7 @@ def _public_page(url):
         if parsed.username or parsed.password or (parsed.port and parsed.port not in {80, 443}):
             raise ValueError('Use a public application URL without credentials or custom ports.')
         validate_public_url(url)
-        with requests.get(url, timeout=8, stream=True, allow_redirects=False, headers={'User-Agent': 'Forth/1.0'}) as response:
+        with public_get(url, timeout=8, stream=True, allow_redirects=False, headers={'User-Agent': 'Forth/1.0'}) as response:
             if response.is_redirect:
                 url = urljoin(url, response.headers.get('Location', ''))
                 continue
