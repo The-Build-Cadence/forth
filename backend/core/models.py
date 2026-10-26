@@ -524,6 +524,8 @@ class Application(OwnedModel):
     form_fields = models.JSONField(default=list, blank=True)
     application_form_url = models.URLField(max_length=1000, blank=True)
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default='saved', db_index=True)
+    status_entered_at = models.DateTimeField(default=timezone.now, editable=False)
+    status_age_estimated = models.BooleanField(default=False, editable=False)
     resume = models.ForeignKey(Resume, null=True, blank=True, on_delete=models.SET_NULL, related_name='applications')
     applied_at = models.DateTimeField(null=True, blank=True)
     follow_up_at = models.DateTimeField(null=True, blank=True)
@@ -543,6 +545,18 @@ class Application(OwnedModel):
         return f'{self.job} ({self.status})'
 
     def save(self, *args, **kwargs):
+        update_fields = kwargs.get('update_fields')
+        if self.pk and (update_fields is None or 'status' in update_fields):
+            previous = type(self).objects.filter(pk=self.pk).values('status', 'status_entered_at', 'status_age_estimated').first()
+            if previous and previous['status'] != self.status:
+                self.status_entered_at = timezone.now()
+                self.status_age_estimated = False
+                if update_fields is not None:
+                    kwargs['update_fields'] = set(update_fields) | {'status_entered_at', 'status_age_estimated'}
+            elif previous:
+                # Do not overwrite a newer timestamp held by the stored record.
+                self.status_entered_at = previous['status_entered_at']
+                self.status_age_estimated = previous['status_age_estimated']
         if not self.application_form_url and self.job_id:
             job = self.job
             self.application_form_url = job.application_url or job.source_url

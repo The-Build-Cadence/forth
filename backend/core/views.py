@@ -532,7 +532,7 @@ class JobPostingViewSet(OwnedViewSet):
             from .domain.application_journey import save_job
 
             application, _ = save_job(request.user, job)
-            Application.objects.filter(pk=application.pk, status__in=['saved', 'review', 'discovered', 'approved']).update(status='preparing', updated_at=timezone.now())
+            Application.objects.filter(pk=application.pk, status__in=['saved', 'review', 'discovered', 'approved']).update(status='preparing', status_entered_at=timezone.now(), status_age_estimated=False, updated_at=timezone.now())
             ApplicationEvent.objects.create(
                 owner=request.user, application=application, event_type='preparation_started',
                 happened_at=timezone.now(), notes='Document preparation requested. Drafts will need review; nothing has been submitted.',

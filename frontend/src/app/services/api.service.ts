@@ -300,6 +300,8 @@ export interface ApplicationField {
 }
 
 export interface ApplicationRecord {
+  status_entered_at?: string;
+  status_age_estimated?: boolean;
   form_fields?: ApplicationField[];
   id: number;
   job: number;

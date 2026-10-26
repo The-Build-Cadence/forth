@@ -589,14 +589,14 @@ class ApplicationSerializer(OwnerScopedRelationsMixin, serializers.ModelSerializ
     class Meta:
         model = Application
         fields = [
-            'id', 'job', 'job_detail', 'status', 'resume', 'resume_title',
+            'id', 'job', 'job_detail', 'status', 'status_entered_at', 'status_age_estimated', 'resume', 'resume_title',
             'resume_detail', 'cover_letters',
             'application_form_url', 'form_fields',
             'applied_at', 'follow_up_at', 'outcome', 'notes',
             'contact_name', 'contact_email', 'events', 'artifacts',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['events', 'artifacts', 'created_at', 'updated_at']
+        read_only_fields = ['status_entered_at', 'status_age_estimated', 'events', 'artifacts', 'created_at', 'updated_at']
 
     def validate_form_fields(self, value):
         from .domain.application_fields import merge_fields
@@ -637,7 +637,7 @@ class ApplicationSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Application
         fields = [
-            'id', 'job', 'job_detail', 'status', 'resume', 'resume_title', 'artifact_count',
+            'id', 'job', 'job_detail', 'status', 'status_entered_at', 'status_age_estimated', 'resume', 'resume_title', 'artifact_count',
             'application_form_url',
             'applied_at', 'follow_up_at', 'contact_name', 'updated_at', 'created_at',
         ]

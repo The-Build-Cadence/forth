@@ -1429,8 +1429,13 @@ a.metric:hover {
 
 .pipeline-board {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 14px;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(min(340px, 85vw), 1fr);
+  gap: 20px;
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: 16px;
+  scrollbar-width: auto;
   min-width: 0;
   margin: 0 0 22px;
 }
@@ -2030,7 +2035,7 @@ a.metric:hover {
     align-items: flex-start;
   }
 
-  .pipeline-board { grid-template-columns: 1fr; }
+
 
   .pagination { justify-content: space-between; gap: 8px; }
   .pagination .btn-secondary { padding: 8px 10px; }
@@ -2060,7 +2065,7 @@ a.metric:hover {
 @media (min-width: 1900px) {
   .page { padding-inline: clamp(64px, 4vw, 120px); }
   .panel { padding: 28px; }
-  .pipeline-board { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+
   .today-grid { grid-template-columns: minmax(0, 1.7fr) minmax(390px, .6fr); gap: 28px; }
   .concierge-layout { grid-template-columns: minmax(0, 1.8fr) minmax(390px, .55fr); gap: 28px; }
 }
@@ -2366,7 +2371,7 @@ details.setup-card { padding:20px 24px; }
 
 /* Shared workspace rhythm: readable measures, consistent controls and surfaces. */
 .app-main > router-outlet + * > .page {
-  max-width: 1800px;
+  max-width: none;
   padding: 36px clamp(20px, 3vw, 56px) 64px;
 }
 .page-head { min-height: 0; margin-bottom: 28px; align-items: flex-start; }
@@ -2416,12 +2421,36 @@ label { line-height: 1.45; }
   .document-stage { padding:12px; }
 }
 /* Keep every pipeline stage reachable without scrolling past a long column. */
-.page .pipeline-board { grid-template-columns: repeat(6, minmax(260px, 1fr)); align-items: start; overflow-x: auto; padding-bottom: 12px; }
-.pipeline-col { max-height: min(70vh, 800px); overflow-y: auto; scrollbar-gutter: stable; }
-.pipeline-col-head { position: sticky; top: -14px; z-index: 1; background: #f1f3f8; padding-block: 10px; }
+
+.pipeline-col { max-height: min(70vh, 900px); padding: 16px; overflow-y: auto; scrollbar-gutter: stable; }
+.pipeline-col-head { position: sticky; top: -16px; z-index: 1; background: #f1f3f8; padding-block: 10px; }
 .edit-grid > label { margin-bottom: 0; }
 .form-actions + .field-hint { margin-top: 16px; }
 @media (max-width: 700px) {
-  .page .pipeline-board { grid-template-columns: 1fr; overflow-x: visible; }
+
   .pipeline-col { max-height: 480px; }
 }
+
+.board-navigation { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.board-navigation p { margin: 0; color: var(--muted); font-size: .82rem; }
+.pipeline-board .application-card { padding: 18px; gap: 12px; }
+.pipeline-board .application-card-footer { grid-template-columns: 1fr; gap: 5px; }
+.pipeline-board .application-card-footer span:first-child { white-space: normal; }
+.pipeline-board .application-card { touch-action: pan-x pan-y; }
+
+/* Always-visible horizontal control, including systems with auto-hiding scrollbars. */
+input.pipeline-scrollbar { display: block; appearance: none; width: 100%; height: 24px; min-height: 24px; margin: 0 0 16px; padding: 0; border: 0; border-radius: 8px; background: transparent; cursor: ew-resize; }
+input.pipeline-scrollbar::-webkit-slider-runnable-track { height: 14px; background: #dce5df; border: 1px solid #a7b8af; border-radius: 8px; }
+input.pipeline-scrollbar::-webkit-slider-thumb { appearance: none; width: 72px; height: 22px; margin-top: -5px; border: 2px solid #fff; border-radius: 8px; background: #177d69; box-shadow: 0 1px 3px #81998d; }
+input.pipeline-scrollbar::-moz-range-track { height: 14px; background: #dce5df; border: 1px solid #a7b8af; border-radius: 8px; }
+input.pipeline-scrollbar::-moz-range-thumb { width: 72px; height: 20px; border: 2px solid #fff; border-radius: 8px; background: #177d69; }
+input.pipeline-scrollbar:disabled { opacity: .4; cursor: default; }
+
+/* Time in the current application stage, independent of document and note edits. */
+.application-age { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; text-align: left; }
+.stage-age { font-size: 12px; font-weight: 650; color: var(--muted); white-space: nowrap; }
+.stage-age.needs-attention { color: #9a5b12; }
+.stage-action { border-radius: 6px; padding: 3px 7px; background: #fff4dc; color: #805015; font-size: 11px; font-weight: 650; }
+.stage-age-help { margin: 0 0 12px; color: var(--muted); font-size: 12px; }
+.stage-age-help summary { cursor: pointer; width: fit-content; }
+.stage-age-help p { max-width: 780px; line-height: 1.6; margin: 8px 0; }

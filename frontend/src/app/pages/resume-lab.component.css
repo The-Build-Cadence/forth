@@ -1,4 +1,4 @@
-.resume-studio-page { max-width: 1800px; }
+.resume-studio-page { max-width: none; }
 .resume-studio-head .page-intro { max-width: 900px; }
 .resume-studio-page .tabs { display: flex; width: fit-content; }
 .resume-contact-panel { max-width: 800px; }

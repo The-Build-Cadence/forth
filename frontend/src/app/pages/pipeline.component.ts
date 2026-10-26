@@ -1,9 +1,9 @@
 import { CommonModule } from '@angular/common';
-import { Component, HostListener, NgZone, OnDestroy, OnInit } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, HostListener, NgZone, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { timeout } from 'rxjs';
 import { ApiService, ApplicationRecord } from '../services/api.service';
-import { applicationStage, applicationStages } from '../services/application-journey';
+import { applicationBoardStatuses, applicationsInStatus, applicationAge } from '../services/application-board';
 
 interface StatusDef {
   key: string;
@@ -25,7 +25,12 @@ interface StatusDef {
       </div>
 
       <div class="board-toolbar"><div><strong>{{ totalApplications }} opportunities</strong><span>Select a job to open its workspace · drag to update progress</span></div><span class="status-chip good">● Live pipeline</span></div>
-      <section class="pipeline-board" [class.is-dragging]="draggedApplicationId !== null" aria-label="Application pipeline">
+      <details class="stage-age-help"><summary>About stage age &amp; action cues</summary><p>Age counts time in the current column and resets when a job moves. ~ marks an estimated age for older records. Suggested checks appear after 3 days waiting to prepare, 2 days with documents ready, 1 hour preparing, or 7 days after applying or interviewing. Scheduled follow-ups take priority. Closed applications stay neutral.</p></details>
+      <div class="board-navigation">
+        <p id="pipeline-scroll-hint">All {{ statuses.length }} stages are in one row. Use the scrollbar to see more.</p>
+      </div>
+      <input class="pipeline-scrollbar" type="range" min="0" [max]="maxScroll" step="1" [value]="scrollPosition" [disabled]="maxScroll <= 0" aria-label="Horizontal application scrollbar" (input)="seekBoard(board, $event)">
+      <section #board class="pipeline-board" tabindex="0" (scroll)="scrollPosition = board.scrollLeft" aria-describedby="pipeline-scroll-hint" [class.is-dragging]="draggedApplicationId !== null" aria-label="Application pipeline">
         <div class="pipeline-col" *ngFor="let status of statuses" [class.drop-target]="dropTargetStatus === status.key" [attr.data-pipeline-status]="status.key">
           <div class="pipeline-col-head"><h2>{{ status.label }}</h2><span>{{ byStatus(status.key).length }}</span></div>
           <button class="application-card" type="button" *ngFor="let app of byStatus(status.key); trackBy: applicationId" [class.selected]="selected?.id === app.id" [class.dragging]="draggedApplicationId === app.id" draggable="false" (dragstart)="$event.preventDefault()" (pointerdown)="startDrag($event, app)" (pointermove)="moveDrag($event)" (pointerup)="finishDrag($event)" (pointercancel)="cancelDrag()" (lostpointercapture)="cancelDrag()" (click)="select(app)" [disabled]="loadingApplicationId === app.id">
@@ -33,7 +38,10 @@ interface StatusDef {
             <strong>{{ app.job_detail.title }}</strong>
             <p>{{ app.job_detail.company || 'Unknown company' }} · {{ app.job_detail.location || app.job_detail.remote_policy }}</p>
             <div class="card-chip-row"><span class="status-chip" [class.good]="app.job_detail.match?.meets_profile_threshold">{{ app.job_detail.match?.normalized_score || 0 }} calibrated · {{ app.job_detail.match?.score || 0 }} raw</span><span class="status-chip" [class.good]="app.job_detail.match?.hard_filter_status === 'pass'">{{ app.job_detail.match?.hard_filter_status || 'unreviewed' }}</span></div>
-            <p *ngIf="app.follow_up_at && isFollowUpDue(app)" class="status-chip warn">Follow-up due</p><div class="application-card-footer"><span>{{ app.resume_title ? 'Documents available' : 'Documents not created' }}</span><span>{{ app.artifact_count || 0 }} files · {{ app.updated_at | date:'MMM d' }} →</span></div>
+            <div class="application-age" *ngIf="age(app) as timing" [attr.title]="timing.title">
+              <span class="stage-age" [class.needs-attention]="timing.action">◷ {{ timing.label }}</span>
+              <span *ngIf="timing.action" class="stage-action">{{ timing.action }}</span>
+            </div><div class="application-card-footer"><span>{{ app.resume_title ? 'Documents available' : 'Documents not created' }}</span><span>{{ app.artifact_count || 0 }} files · {{ app.updated_at | date:'MMM d' }} →</span></div>
           </button>
           <div class="column-empty" *ngIf="!byStatus(status.key).length">No applications</div>
         </div>
@@ -49,7 +57,26 @@ interface StatusDef {
     </section>
   `,
 })
-export class PipelineComponent implements OnInit, OnDestroy {
+export class PipelineComponent implements OnInit, AfterViewInit, OnDestroy {
+  @ViewChild('board') boardElement!: ElementRef<HTMLElement>;
+  maxScroll = 0;
+  scrollPosition = 0;
+  private boardObserver?: ResizeObserver;
+
+  ngAfterViewInit(): void {
+    const board = this.boardElement.nativeElement;
+    this.boardObserver = new ResizeObserver(() => this.zone.run(() => {
+      this.maxScroll = board.scrollWidth - board.clientWidth;
+      this.scrollPosition = board.scrollLeft;
+    }));
+    this.boardObserver.observe(board);
+  }
+
+  seekBoard(board: HTMLElement, event: Event): void {
+    board.scrollLeft = Number((event.target as HTMLInputElement).value);
+    this.scrollPosition = board.scrollLeft;
+  }
+
   applications: ApplicationRecord[] = [];
   totalApplications = 0;
   currentPage = 1;
@@ -70,9 +97,13 @@ export class PipelineComponent implements OnInit, OnDestroy {
 
   applicationId(_index: number, app: ApplicationRecord): number { return app.id; }
 
-  ngOnDestroy(): void { this.resetDrag(); clearTimeout(this.clickReset); }
+  ngOnDestroy(): void { clearInterval(this.ageTimer); this.boardObserver?.disconnect(); this.resetDrag(); clearTimeout(this.clickReset); }
 
-  statuses: StatusDef[] = applicationStages;
+  statuses: StatusDef[] = applicationBoardStatuses;
+
+  private ageClock = Date.now();
+  private ageTimer = setInterval(() => { this.ageClock = Date.now(); }, 60000);
+  age(application: ApplicationRecord) { return applicationAge(application, this.ageClock); }
 
   constructor(private api: ApiService, private route: ActivatedRoute, private zone: NgZone, private router: Router) {}
 
@@ -101,7 +132,7 @@ export class PipelineComponent implements OnInit, OnDestroy {
   }
 
   byStatus(status: string): ApplicationRecord[] {
-    return this.applications.filter((app) => applicationStage(app.status) === status);
+    return applicationsInStatus(this.applications, status);
   }
 
   select(application: ApplicationRecord): void {
@@ -122,7 +153,7 @@ export class PipelineComponent implements OnInit, OnDestroy {
   }
 
   isFollowUpDue(application: ApplicationRecord): boolean {
-    return applicationStage(application.status) !== 'archived' && !!application.follow_up_at && Date.parse(application.follow_up_at) <= Date.now();
+    return !['rejected', 'archived'].includes(application.status) && !!application.follow_up_at && Date.parse(application.follow_up_at) <= Date.now();
   }
 
   startDrag(event: PointerEvent, application: ApplicationRecord): void {
@@ -188,7 +219,7 @@ export class PipelineComponent implements OnInit, OnDestroy {
     if (!moved) return;
     event.preventDefault();
     this.suppressReleaseClick();
-    if (!target || target === applicationStage(drag.application.status)) {
+    if (!target || target === drag.application.status) {
       this.boardMessage = 'Application stayed in its original stage.';
       return;
     }

@@ -102,7 +102,7 @@ def regenerate_application_materials_task(job_id: int) -> dict:
         return payload
     except Exception as exc:
         Application.objects.filter(pk=application.pk, status='preparing', resume__isnull=True).update(
-            status='saved', updated_at=timezone.now(),
+            status='saved', status_entered_at=timezone.now(), status_age_estimated=False, updated_at=timezone.now(),
         )
         job.materials_status = 'failed'
         job.save(update_fields=['materials_status', 'updated_at'])
