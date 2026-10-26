@@ -2362,4 +2362,66 @@ details.setup-card { padding:20px 24px; }
 .today-hero .eyebrow { color:#b7d8cc; }
 :focus-visible { outline:3px solid #177d69; outline-offset:3px; }
 .side-nav :focus-visible { outline-color:#c9f45a; }
-app-job-overview > .page, app-job-documents > .page { padding: 0; max-width: none; }
+.job-workspace app-job-overview > .page, app-job-documents > .page.embedded-documents { padding: 0; max-width: none; }
+
+/* Shared workspace rhythm: readable measures, consistent controls and surfaces. */
+.app-main > router-outlet + * > .page {
+  max-width: 1800px;
+  padding: 36px clamp(20px, 3vw, 56px) 64px;
+}
+.page-head { min-height: 0; margin-bottom: 28px; align-items: flex-start; }
+.page-head h1 { font-size: clamp(1.7rem, 2.1vw, 2.15rem); line-height: 1.18; max-width: 34ch; }
+.page-intro { max-width: 70ch; font-size: .95rem; }
+.page-head > .action-row, .page-head > .btn-primary, .page-head > .btn-secondary { flex-shrink: 0; }
+.panel, .resume-result, .approval-card, .pipeline-col { border-radius: var(--radius); }
+.panel-head { gap: 16px; }
+.panel-head p { margin-top: 6px; }
+.btn-primary, .btn-secondary { min-height: 44px; border-radius: var(--radius-sm); font-size: .85rem; line-height: 1.35; gap: 8px; }
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea { font-weight: 400; border-radius: var(--radius-sm); line-height: 1.5; }
+label { line-height: 1.45; }
+.edit-grid, .import-grid { gap: 18px 20px; align-items: start; }
+.field-hint { line-height: 1.55; }
+.tabs { background: var(--panel-subtle); border-radius: var(--radius-sm); margin-bottom: 24px; gap: 4px; }
+.tabs button { min-height: 42px; line-height: 1.35; }
+.status-chip + .status-chip { margin-left: 6px; }
+.card-chip-row .status-chip + .status-chip, .journey-status .status-chip + .status-chip { margin-left: 0; }
+.today-hero { border-radius: var(--radius-lg); }
+.today-hero h1 { font-size: clamp(1.9rem, 2.6vw, 2.8rem); max-width: 28ch; line-height: 1.15; }
+.profile-brief, .settings-page > .settings-panel { max-width: 1120px; }
+.document-default-link { margin: 0; padding: 16px 22px; font-size: .82rem; color: var(--accent-strong); }
+.resume-studio-page .source-resume-panel { max-width: 1040px; }
+.resume-studio-page .tabs { display: flex; width: fit-content; }
+.resume-studio-page .tabs button { padding: 10px 16px; }
+.resume-studio-page .material-library { scrollbar-gutter: stable; }
+.resume-studio-page .result-toolbar { align-items: flex-start; flex-wrap: wrap; }
+.resume-studio-page .result-toolbar > div { min-width: 0; }
+.resume-studio-page .result-toolbar h2 { overflow-wrap: anywhere; }
+.resume-studio-page .resume-version-row { gap: 12px; padding: 14px 10px; }
+.resume-studio-page .resume-version-row strong { white-space: normal !important; line-height: 1.4; }
+.resume-studio-page .material-group-label { font-size: .7rem; color: var(--ink-soft); }
+@media (max-width: 1100px) {
+  .page-head { flex-wrap: wrap; }
+  .resume-studio-grid { grid-template-columns: 1fr; }
+  .material-library { position: static; max-height: 420px; }
+}
+@media (max-width: 700px) {
+  .app-main > router-outlet + * > .page { padding: 24px 16px 40px; }
+  .page-head { gap: 16px; margin-bottom: 24px; }
+  .page-head h1 { font-size: 1.7rem; }
+  .panel { padding: 18px; }
+  .tabs, .resume-studio-page .tabs { display:flex; width:100%; flex-wrap:wrap; }
+  .tabs button, .resume-studio-page .tabs button { flex:1 1 auto; white-space:normal; padding:10px 12px; }
+  .action-row { flex-wrap:wrap; }
+  .today-hero { padding:24px; }
+  .document-stage { padding:12px; }
+}
+/* Keep every pipeline stage reachable without scrolling past a long column. */
+.page .pipeline-board { grid-template-columns: repeat(6, minmax(260px, 1fr)); align-items: start; overflow-x: auto; padding-bottom: 12px; }
+.pipeline-col { max-height: min(70vh, 800px); overflow-y: auto; scrollbar-gutter: stable; }
+.pipeline-col-head { position: sticky; top: -14px; z-index: 1; background: #f1f3f8; padding-block: 10px; }
+.edit-grid > label { margin-bottom: 0; }
+.form-actions + .field-hint { margin-top: 16px; }
+@media (max-width: 700px) {
+  .page .pipeline-board { grid-template-columns: 1fr; overflow-x: visible; }
+  .pipeline-col { max-height: 480px; }
+}

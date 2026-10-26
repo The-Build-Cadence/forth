@@ -407,7 +407,7 @@ def create_tailored_resume(owner, *, job: JobPosting, canonical: Resume | None =
         )
     facts = list(authoritative_facts(owner).order_by('-verified_by_user', 'fact_type', 'title')[:120])
     profile = getattr(owner, 'candidate_profile', None)
-    from .domain.material_preferences import material_instructions, instruction_design
+    from .domain.material_preferences import material_instructions, document_design
     instructions = material_instructions(owner, job)
     contact = getattr(profile, 'resume_contact', {}) or {}
     candidate_name = owner.get_full_name() or owner.get_username().split('@')[0].replace('.', ' ').replace('_', ' ').title()
@@ -453,10 +453,10 @@ def create_tailored_resume(owner, *, job: JobPosting, canonical: Resume | None =
                 for field, toggle in [('phone', 'include_phone'), ('email', 'include_email'), ('linkedin_url', 'include_linkedin')]
             } if contact else {},
             'generation_instructions': instructions,
-            'design': instruction_design(result.data.get('design') or {
+            'design': document_design(owner, job, result.data.get('design') or {
                 'template': 'modern', 'density': 'balanced', 'accent': '#177d69',
                 'page_size': 'Letter', 'rationale': 'A clean, ATS-safe presentation selected for this application.',
-            }, instructions),
+            }),
         },
         parent_resume=canonical,
         target_job=job,

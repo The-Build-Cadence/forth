@@ -10,7 +10,7 @@ from core.mcp_views import MCPView, OAuthLoginView
 from core.usage_views import UsageSummaryView
 from core.access_views import RecoveryView, ResetPasswordView, DeleteAccountView, PublicAccessView, AccountTokenRefreshView
 from core.start_views import SearchSetupView, StartDiscoveryView
-from core.account_views import AccountSettingsView, AccountModelsView
+from core.account_views import AccountSettingsView, AccountModelsView, DocumentDesignPreviewView
 
 from core.views import (
     AgentRunViewSet,
@@ -68,6 +68,7 @@ urlpatterns = metadata_urlpatterns + [
     path('api/auth/login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/auth/signup/', RegistrationView.as_view(), name='signup'),
     path('api/auth/refresh/', AccountTokenRefreshView.as_view(), name='token_refresh'),
+    path('api/account/document-design/preview/', DocumentDesignPreviewView.as_view(), name='document-design-preview'),
     path('api/account/settings/', AccountSettingsView.as_view(), name='account-settings'),
     path('api/account/models/', AccountModelsView.as_view(), name='account-models'),
     path('api/usage/', UsageSummaryView.as_view(), name='usage-summary'),

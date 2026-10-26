@@ -12,12 +12,23 @@ from .account_ai import cipher
 from .models import AccountSettings, CandidateProfile
 
 
+class DocumentDesignInput(serializers.Serializer):
+    template = serializers.ChoiceField(choices=['modern', 'classic', 'minimal'])
+    layout = serializers.ChoiceField(choices=['single', 'two_column'])
+    font = serializers.ChoiceField(choices=['sans', 'humanist', 'serif'])
+    density = serializers.ChoiceField(choices=['compact', 'balanced', 'spacious'])
+    accent = serializers.RegexField(r'^#[0-9a-fA-F]{6}$')
+    page_size = serializers.ChoiceField(choices=['Letter', 'A4'])
+    max_pages = serializers.IntegerField(min_value=0, max_value=3)
+
+
 class SettingsInput(serializers.Serializer):
     openai_api_key = serializers.CharField(required=False, allow_blank=False, max_length=512, write_only=True, trim_whitespace=True)
     remove_key = serializers.BooleanField(required=False, default=False)
     use_personal_ai = serializers.BooleanField(required=False)
     text_model = serializers.RegexField(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$', required=False, allow_blank=True)
     reasoning_effort = serializers.ChoiceField(choices=['', 'low', 'medium', 'high'], required=False)
+    document_design = DocumentDesignInput(required=False)
     generation_instructions = serializers.CharField(required=False, allow_blank=True, max_length=6000)
 
     def validate(self, data):
@@ -31,10 +42,12 @@ class SettingsInput(serializers.Serializer):
 def snapshot(owner):
     config, _ = AccountSettings.objects.get_or_create(owner=owner)
     profile, _ = CandidateProfile.objects.get_or_create(owner=owner)
+    from .domain.material_preferences import document_design
     return {'has_openai_key': bool(config.openai_key_encrypted), 'use_personal_ai': config.use_personal_ai,
             'text_model': config.text_model or settings.OPENAI_TEXT_MODEL, 'reasoning_effort': config.reasoning_effort,
             'default_text_model': settings.OPENAI_TEXT_MODEL, 'embedding_model': settings.OPENAI_EMBEDDING_MODEL,
             'generation_instructions': profile.generation_instructions,
+            'document_design': document_design(owner),
             'email': owner.email, 'name': owner.get_full_name() or owner.get_username()}
 
 
@@ -58,7 +71,7 @@ class AccountSettingsView(APIView):
                 config.use_personal_ai = False
             if data.get('openai_api_key'):
                 config.openai_key_encrypted = cipher().encrypt(data['openai_api_key'].encode()).decode()
-            for field in ['use_personal_ai', 'text_model', 'reasoning_effort']:
+            for field in ['use_personal_ai', 'text_model', 'reasoning_effort', 'document_design']:
                 if field in data:
                     setattr(config, field, data[field])
             if data.get('remove_key'):
@@ -90,3 +103,14 @@ class AccountModelsView(APIView):
             return Response({'models': names})
         except Exception:
             return Response({'detail': 'Could not verify the saved key or list models. Check its permissions and try again.'}, status=400)
+
+
+class DocumentDesignPreviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from .domain.documents import document_html
+        serializer = DocumentDesignInput(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        sample = '# Your name\nProfessional headline · City, Country\n\n## Profile\nA concise introduction to your experience and the value you bring.\n\n## Experience\n### Your most recent role\nCompany · 2022–Present\n- Led a team to deliver thoughtful, reliable products.\n- Improved processes and collaborated across teams.\n\n## Skills\nLeadership · Strategy · Communication\n\n## Education\nYour qualification · Institution'
+        return Response({'html': document_html('Document style preview', sample, kind='resume', design=serializer.validated_data)})

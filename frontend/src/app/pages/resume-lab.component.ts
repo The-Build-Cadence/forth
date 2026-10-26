@@ -1,5 +1,6 @@
+import { DocumentDesignComponent } from './document-design.component';
 import { CommonModule } from '@angular/common';
-import { Component, EventEmitter, Input, OnInit, Output, ViewEncapsulation } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, ViewEncapsulation, ViewChild, HostListener } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
@@ -19,11 +20,11 @@ interface ResumeDesign {
 @Component({
   selector: 'app-job-documents',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, RouterLink, DocumentDesignComponent],
   styleUrl: './resume-lab.component.css',
   encapsulation: ViewEncapsulation.None,
   template: `
-    <section class="page resume-studio-page">
+    <section class="page resume-studio-page" [class.embedded-documents]="!!embeddedJobId">
       <div class="page-head resume-studio-head" *ngIf="!embeddedJobId">
         <div>
           <p class="eyebrow">AI application materials</p>
@@ -37,7 +38,9 @@ interface ResumeDesign {
         <button type="button" role="tab" [class.active]="activeTab === 'create'" [attr.aria-selected]="activeTab === 'create'" (click)="activeTab = 'create'">Source resume</button>
         <button type="button" role="tab" [class.active]="activeTab === 'contact'" [attr.aria-selected]="activeTab === 'contact'" (click)="activeTab = 'contact'; loadContact()">Contact details</button>
         <button type="button" role="tab" [class.active]="activeTab === 'library'" [attr.aria-selected]="activeTab === 'library'" (click)="activeTab = 'library'">Review & download</button>
+        <button type="button" role="tab" [class.active]="activeTab === 'design'" [attr.aria-selected]="activeTab === 'design'" (click)="activeTab = 'design'; designOpened = true">Document design</button>
       </div>
+      <app-document-design *ngIf="designOpened" [hidden]="activeTab !== 'design'"></app-document-design>
       <p class="feedback-banner" role="status" *ngIf="message">{{ message }}</p>
 
       <section class="panel resume-contact-panel" *ngIf="activeTab === 'contact'">
@@ -102,22 +105,7 @@ interface ResumeDesign {
             </div>
           </section>
 
-          <details class="resume-designer" *ngIf="designDraft"><summary>Adjust document design</summary>
-            <div class="panel-head"><div><h3>Resume designer</h3><p>Adjust this version without rewriting your experience. The preview uses the PDF renderer’s design and embedded fonts.</p></div></div>
-            <div class="designer-controls">
-              <label>Style<select [(ngModel)]="designDraft.template" (ngModelChange)="previewDesign()"><option value="modern">Modern</option><option value="minimal">Minimal</option><option value="classic">Classic</option></select></label>
-              <label>Layout<select [(ngModel)]="designDraft.layout" (ngModelChange)="previewDesign()"><option value="single">Single column</option><option value="two_column">Balanced two columns</option></select></label>
-              <label>Font<select [(ngModel)]="designDraft.font" (ngModelChange)="previewDesign()"><option value="sans">Clean sans · Helvetica-style</option><option value="humanist">Humanist sans · Calibri-style</option><option value="serif">Classic serif</option></select></label>
-              <label>Spacing<select [(ngModel)]="designDraft.density" (ngModelChange)="previewDesign()"><option value="compact">Compact</option><option value="balanced">Balanced</option><option value="spacious">Spacious</option></select></label>
-              <label>Accent color<input type="color" [(ngModel)]="designDraft.accent" (change)="previewDesign()"></label>
-              <label>Paper<select [(ngModel)]="designDraft.page_size" (ngModelChange)="previewDesign()"><option value="Letter">Letter</option><option value="A4">A4</option></select></label>
-              <label>Page limit<select [(ngModel)]="designDraft.max_pages" (ngModelChange)="previewDesign()"><option [ngValue]="0">Automatic</option><option [ngValue]="1">One page</option><option [ngValue]="2">Two pages</option><option [ngValue]="3">Three pages</option></select></label>
-            </div>
-            <p class="field-hint">Fonts are embedded for consistent downloads: Liberation Sans, Carlito, or Liberation Serif. Two columns keep selectable text; some application parsers work best with a single column.</p>
-            <p class="field-hint">The preview shows continuous content. PDF export checks the page limit and may use compact spacing to fit. If it still exceeds the limit, Forth asks you to shorten it instead of cutting off content.</p>
-            <div class="action-row"><button type="button" class="btn-secondary" (click)="previewDesign(true)" [disabled]="designLoading">Apply saved style instructions</button><button type="button" class="btn-primary" (click)="saveDesign()" [disabled]="!designDirty || designLoading">{{ designLoading ? 'Updating preview…' : 'Save design' }}</button></div>
-            <p class="field-hint">Saved style instructions use this opportunity’s override, or your Settings defaults. Writing and emphasis changes require Regenerate. Save this design before downloading.</p>
-          </details>
+          <p class="document-default-link"><a routerLink="/resume-lab" [queryParams]="{tab: 'design'}">Customize the design of future documents →</a></p>
           <p class="field-hint" role="status" *ngIf="designLoading">Loading design preview…</p>
           <p role="alert" *ngIf="designError">{{ designError }} <button type="button" class="btn-secondary" (click)="loadDesign()">Retry preview</button></p>
           <section class="document-stage" *ngIf="designPreview">
@@ -146,7 +134,10 @@ interface ResumeDesign {
 
         <section class="resume-result" *ngIf="selectedLetter">
           <section class="result-toolbar"><div><div class="result-title-line"><span class="ai-designed-badge purple">✦ AI written</span><span class="status-chip" [class.good]="selectedLetter.approved">{{ selectedLetter.approved ? 'Reviewed' : 'Ready for review' }}</span></div><h2>{{ selectedLetter.title }}</h2><p>Cover letter · version {{ selectedLetter.version }}</p></div></section>
-          <section class="document-stage cover-letter-stage"><div class="page-shadow"><article class="resume-paper cover-letter-paper" [class.template-classic]="design(selectedLetter).template === 'classic'" [class.template-minimal]="design(selectedLetter).template === 'minimal'" [class.density-compact]="design(selectedLetter).density === 'compact'" [class.density-spacious]="design(selectedLetter).density === 'spacious'" [style.--document-accent]="design(selectedLetter).accent" [innerHTML]="renderMarkdown(selectedLetter.content_markdown)"></article></div></section>
+          <p class="document-default-link"><a routerLink="/resume-lab" [queryParams]="{tab: 'design'}">Customize the design of future documents →</a></p>
+          <p *ngIf="letterPreviewLoading" role="status">Loading cover letter preview…</p>
+          <p *ngIf="letterPreviewError" role="alert">Could not load the preview. <button class="btn-secondary" (click)="loadLetterPreview()">Retry</button></p>
+          <section class="document-stage cover-letter-stage" *ngIf="letterPreview"><iframe class="designed-resume-preview" title="Designed cover letter preview" sandbox="" [srcdoc]="letterPreview"></iframe></section>
           <details class="generation-notes" *ngIf="selectedLetter.validation?.unsupported_claims?.length"><summary>Claims to review</summary><ul><li *ngFor="let claim of selectedLetter.validation.unsupported_claims">{{ claim }}</li></ul></details>
           <p class="field-hint" *ngFor="let note of selectedLetter.validation?.risk_notes || []">{{ note }}</p>
           <div class="action-row"><button class="btn-secondary" (click)="downloadLetter(selectedLetter, 'pdf')">Download PDF</button><button class="btn-secondary" (click)="downloadLetter(selectedLetter, 'markdown')">Download Markdown</button></div>
@@ -162,6 +153,12 @@ interface ResumeDesign {
 export class ResumeLabComponent implements OnInit {
   @Input() embeddedJobId?: number;
   @Output() documentsChanged = new EventEmitter<void>();
+  @ViewChild(DocumentDesignComponent) defaultsEditor?: DocumentDesignComponent;
+  designOpened = false;
+  canLeave(): boolean { return !this.defaultsEditor?.dirty || window.confirm('Leave without saving your document defaults?'); }
+  @HostListener('window:beforeunload', ['$event']) beforeUnload(event: BeforeUnloadEvent): void {
+    if (this.defaultsEditor?.dirty) { event.preventDefault(); event.returnValue = ''; }
+  }
   resumes: Resume[] = [];
   sourceResumes: Resume[] = [];
   libraryJobId: number | null = null;
@@ -178,7 +175,7 @@ export class ResumeLabComponent implements OnInit {
   approvingLetterId: number | null = null;
   acceptResumeRisk = false;
   acceptLetterRisk = false;
-  activeTab: 'library' | 'create' | 'contact' = 'library';
+  activeTab: 'library' | 'create' | 'contact' | 'design' = 'library';
   contact: ResumeContact = { phone: '', email: '', linkedin_url: '', include_phone: true, include_email: true, include_linkedin: true };
   contactLoaded = false;
   contactLoadFailed = false;
@@ -190,6 +187,7 @@ export class ResumeLabComponent implements OnInit {
   ngOnInit(): void {
     const job = this.embeddedJobId || Number(this.route.snapshot.queryParamMap.get('job'));
     if (job > 0) { this.libraryJobId = job; }
+    this.route.queryParamMap.subscribe(params => { if (!this.embeddedJobId && params.get('tab') === 'design') { this.activeTab = 'design'; this.designOpened = true; } });
     this.load(); this.loadContact();
   }
 
@@ -243,6 +241,7 @@ export class ResumeLabComponent implements OnInit {
     this.api.coverLetters(params).subscribe((page) => {
       this.coverLetters = page.results;
       this.selectedLetter = this.coverLetters.find(letter => letter.id === letterId);
+      if (this.selectedLetter) this.loadLetterPreview();
       if (letterId && !this.selectedLetter && this.resumes[0]) this.selectResume(this.resumes[0]);
     });
   }
@@ -257,7 +256,24 @@ export class ResumeLabComponent implements OnInit {
   }
 
   selectResume(resume: Resume): void { this.selected = resume; this.loadDesign(); this.selectedLetter = undefined; this.acceptResumeRisk = false; }
-  selectLetter(letter: CoverLetter): void { this.selectedLetter = letter; this.selected = undefined; this.acceptLetterRisk = false; }
+  selectLetter(letter: CoverLetter): void { this.selectedLetter = letter; this.selected = undefined; this.acceptLetterRisk = false; this.loadLetterPreview(); }
+
+  letterPreview?: SafeHtml;
+  letterPreviewLoading = false;
+  letterPreviewError = false;
+  private letterRequest = 0;
+  loadLetterPreview(): void {
+    if (!this.selectedLetter) return;
+    const id = this.selectedLetter.id, request = ++this.letterRequest;
+    this.letterPreview = undefined; this.letterPreviewLoading = true; this.letterPreviewError = false;
+    this.api.coverLetterDesign(id).subscribe({next: result => {
+      if (request !== this.letterRequest || this.selectedLetter?.id !== id) return;
+      this.letterPreview = this.sanitizer.bypassSecurityTrustHtml(result.html); this.letterPreviewLoading = false;
+    }, error: () => {
+      if (request !== this.letterRequest || this.selectedLetter?.id !== id) return;
+      this.letterPreviewLoading = false; this.letterPreviewError = true;
+    }});
+  }
 
   createCanonical(): void {
     if (this.savingSource || !this.newMarkdown.trim()) return;
@@ -313,11 +329,6 @@ export class ResumeLabComponent implements OnInit {
     this.designDirty = false;
     this.requestDesign();
   }
-  previewDesign(useInstructions = false): void {
-    this.designDirty = true;
-    this.requestDesign({design: this.designDraft, use_saved_instructions: useInstructions});
-  }
-  saveDesign(): void { this.requestDesign({design: this.designDraft, save: true}); }
   private requestDesign(payload?: any): void {
     if (!this.selected) return;
     const id = this.selected.id, request = ++this.designRequest;

@@ -1,7 +1,7 @@
 import { OnboardingWizardComponent } from '../onboarding/onboarding-wizard.component';
 import { CommonModule } from '@angular/common';
 import { Component, OnDestroy, OnInit } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, RouterLink } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 import { ApiService, CandidatePreference, CandidateProfile, ProfileDocument, ProfileFact } from '../services/api.service';
@@ -9,7 +9,7 @@ import { RealtimeService } from '../services/realtime.service';
 
 @Component({
   standalone: true,
-  imports: [CommonModule, FormsModule, OnboardingWizardComponent],
+  imports: [CommonModule, FormsModule, RouterLink, OnboardingWizardComponent],
   template: `
     <section class="page">
       <app-onboarding-wizard *ngIf="showInterview" (closed)="showInterview = false; load()"></app-onboarding-wizard>
@@ -56,7 +56,7 @@ import { RealtimeService } from '../services/realtime.service';
           </label>
         </div>
         <label>Professional summary<textarea rows="6" [(ngModel)]="profile.professional_summary" name="professionalSummary" placeholder="Describe what you are great at, the work you enjoy, and what you want next."></textarea></label>
-        <p><a routerLink="/settings">Manage default material instructions in Settings →</a></p>
+        <p><a routerLink="/resume-lab" [queryParams]="{tab: 'design'}">Manage document defaults in Documents →</a></p>
         <div class="action-row"><button class="btn-primary" type="button" (click)="saveProfile()" [disabled]="savingProfile"><span class="spinner" *ngIf="savingProfile" aria-hidden="true"></span>{{ savingProfile ? 'Saving…' : 'Save search brief' }}</button><span class="muted">Changes immediately affect future scoring.</span></div>
       </section>
 

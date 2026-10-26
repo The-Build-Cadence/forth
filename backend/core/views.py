@@ -689,6 +689,13 @@ class CoverLetterViewSet(OwnedViewSet):
         return qs.order_by('-updated_at', '-id')
 
     @action(detail=True, methods=['get'])
+    def design(self, request, pk=None):
+        from .domain.documents import document_html
+        letter = self.get_object()
+        return Response({'html': document_html(letter.title, letter.content_markdown,
+                         kind='cover_letter', design=(letter.content_json or {}).get('design'))})
+
+    @action(detail=True, methods=['get'])
     def export_markdown(self, request, pk=None):
         letter = self.get_object()
         response = HttpResponse(letter.content_markdown, content_type='text/markdown')

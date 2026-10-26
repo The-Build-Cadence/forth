@@ -327,6 +327,8 @@ export interface ApplicationRecord {
 export class ApiService {
   constructor(private http: HttpClient) {}
 
+  previewDocumentDesign(design: any): Observable<any> { return this.http.post(`${environment.apiBaseUrl}/account/document-design/preview/`, design); }
+  coverLetterDesign(id: number): Observable<any> { return this.http.get(`${environment.apiBaseUrl}/cover-letters/${id}/design/`); }
   accountSettings(): Observable<any> { return this.http.get(`${environment.apiBaseUrl}/account/settings/`); }
   saveAccountSettings(data: any): Observable<any> { return this.http.patch(`${environment.apiBaseUrl}/account/settings/`, data); }
   accountModels(): Observable<any> { return this.http.get(`${environment.apiBaseUrl}/account/models/`); }

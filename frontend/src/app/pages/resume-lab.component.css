@@ -1,6 +1,6 @@
-.resume-studio-page { max-width: none; }
+.resume-studio-page { max-width: 1800px; }
 .resume-studio-head .page-intro { max-width: 900px; }
-.resume-studio-page .tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); width: min(100%, 1280px); }
+.resume-studio-page .tabs { display: flex; width: fit-content; }
 .resume-contact-panel { max-width: 800px; }
 .resume-contact-field { margin: 0 0 22px; }
 .resume-contact-toggle { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
@@ -23,7 +23,7 @@
 .ai-safety-note > span { color: var(--good); font-weight: 900; }
 .ai-safety-note strong { display: block; margin-bottom: 2px; font-size: .78rem; }
 .ai-safety-note p { margin: 0; color: var(--muted); font-size: .74rem; }
-.resume-studio-grid { display: grid; grid-template-columns: minmax(340px, 420px) minmax(0,1fr); gap: clamp(20px, 2vw, 36px); align-items: start; }
+.resume-studio-grid { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0,1fr); gap: clamp(20px, 2vw, 36px); align-items: start; }
 .material-library { position: sticky; top: 20px; max-height: calc(100vh - 40px); overflow: auto; }
 .material-group-label { margin: 18px 2px 9px; color: #8a94a7; font-size: .62rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .resume-version-row { justify-content: flex-start; }

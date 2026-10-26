@@ -69,3 +69,12 @@ def readable_match_summary(summary):
     """Translate old stored summaries without rescoring or changing evidence."""
     labels = {'fail': 'required condition mismatch', 'pass': 'meets required conditions', 'uncertain': 'required conditions need confirmation'}
     return re.sub(r'eligibility (fail|pass|uncertain)', lambda match: labels[match[1].lower()], summary or '', flags=re.I)
+
+
+def document_design(owner, job=None, proposed=None):
+    """Saved explicit appearance wins over AI and prose on every generation path."""
+    from core.models import AccountSettings
+    saved = AccountSettings.objects.filter(owner=owner).values_list('document_design', flat=True).first()
+    if saved:
+        return normalize_design(saved)
+    return instruction_design(proposed, material_instructions(owner, job))

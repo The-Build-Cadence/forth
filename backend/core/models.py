@@ -719,6 +719,7 @@ class ProviderUsage(models.Model):
 
 class AccountSettings(models.Model):
     owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='account_settings')
+    document_design = models.JSONField(default=dict, blank=True)
     openai_key_encrypted = models.TextField(blank=True)
     use_personal_ai = models.BooleanField(default=False)
     text_model = models.CharField(max_length=120, blank=True)

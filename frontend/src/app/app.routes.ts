@@ -29,7 +29,7 @@ export const routes: Routes = [
   { path: 'profile', component: ProfileComponent, canActivate: [authGuard] },
   { path: 'matches', component: MatchesComponent, canActivate: [authGuard] },
   { path: 'jobs/:id', component: JobWorkspaceComponent, canActivate: [authGuard], canDeactivate: [(component: JobWorkspaceComponent) => component.canLeave()] },
-  { path: 'resume-lab', component: ResumeLabComponent, canActivate: [authGuard] },
+  { path: 'resume-lab', component: ResumeLabComponent, canActivate: [authGuard], canDeactivate: [(component: ResumeLabComponent) => component.canLeave()] },
   { path: 'pipeline', component: PipelineComponent, canActivate: [authGuard] },
   { path: 'sources', component: SourcesComponent, canActivate: [authGuard] },
   { path: 'strategy', redirectTo: 'profile', pathMatch: 'full' },
