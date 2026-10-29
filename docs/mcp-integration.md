@@ -128,3 +128,22 @@ existing versions remain unchanged. Supported designs use modern/classic/minimal
 layouts, compact/balanced/spacious density, Letter/A4 paper and six-digit hex
 accent colors. Custom prose directions depend on AI availability; fallback drafts
 include a review note. All tools remain scoped to the authenticated account.
+
+### Reboot readiness for OAuth tunnels
+
+Both local tunnel services have an `oauth-readiness.conf` systemd drop-in. It runs
+`deploy/wait-for-mcp-oauth.py https://forth.mahfouz.ca:8443` as `ExecStartPre`, with
+`TimeoutStartSec=150`. The script waits up to 120 seconds for valid protected-resource
+and authorization-server metadata; failure lets the services' existing
+`Restart=on-failure` retry startup. Keep this drop-in when reinstalling either service.
+
+On 2026-10-29 the secondary tunnel rejected OAuth requests with `unsupported channel
+"harpoon"`: its previous boot had attempted discovery before nginx was listening,
+leaving an empty OAuth target catalog even after Forth recovered. Restarting the
+tunnel restored discovery and all eight routes. Check `/health?details=true` on
+ports 18081 and 18082: `oauth` should be `complete`, `harpoon` should be `settled`
+with targets present, and control-plane polling should be healthy. A running
+systemd process alone does not establish readiness. Full recovery also requires a
+successful retry from the affected user's authenticated client.
+
+Validate the startup gate with `python -m unittest discover -s deploy/tests`.
